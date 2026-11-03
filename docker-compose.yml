@@ -1,7 +1,7 @@
 # nosqlGo — Marketplace + Painel do DBA
 #
-#   docker compose up -d                    # núcleo: postgres, pgbouncer, mongo, redis, api, web
-#   docker compose --profile nosql up -d    # + cassandra e neo4j (+1–2 GB de RAM)
+#   docker compose up -d                    # núcleo: postgres (+réplica), pgbouncer, mongo, redis,
+#                                           #   cassandra e neo4j (Fase 7, memória reduzida), api, web
 #   docker compose --profile tools up -d    # + pgAdmin e RedisInsight
 #   docker compose --profile ha up -d       # + clusters de alta disponibilidade (Fase 5, ~1 GB)
 #
@@ -10,7 +10,7 @@
 #
 # As portas do núcleo vêm de variáveis (padrão = desenvolvimento) para que o
 # stack de E2E (projeto nosqlgo-e2e, e2e/stack.env) suba ao lado deste sem
-# conflito. Os testes NUNCA sobem os perfis nosql/tools.
+# conflito. Os testes NUNCA sobem o perfil tools.
 
 name: nosqlgo
 
@@ -122,45 +122,40 @@ services:
       timeout: 3s
       retries: 20
 
-  # ---------------------------------------------------------------- wide-column
+  # ---------------------------------------------------------------- wide-column (Fase 7)
+  # Um nó só, com memória reduzida (a máquina de estudo tem ~3,8 GB). O
+  # keyspace e as tabelas NÃO vêm de um script: a API os garante a cada
+  # subida (backend/internal/loja/adaptadores/cassandra/vistos.go), como faz
+  # com o MongoDB. A API não espera o Cassandra (ele leva ~1 min para subir).
   cassandra:
     image: cassandra:5.0.9
-    profiles: [nosql]
     environment:
       CASSANDRA_CLUSTER_NAME: nosqlgo
-      MAX_HEAP_SIZE: 1G
-      HEAP_NEWSIZE: 200M
-    ports: ["9042:9042"]
+      MAX_HEAP_SIZE: 384M
+      HEAP_NEWSIZE: 96M
+    ports: ["${CASSANDRA_PORT:-9042}:9042"]
     volumes:
       - cassandradata:/var/lib/cassandra
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' >/dev/null"]
       interval: 15s
       timeout: 10s
-      retries: 20
-      start_period: 60s
-
-  cassandra-init:
-    image: cassandra:5.0.9
-    profiles: [nosql]
-    depends_on:
-      cassandra: { condition: service_healthy }
-    volumes:
-      - ./infra/cassandra/init.cql:/init.cql:ro
-    entrypoint: ["cqlsh", "cassandra", "-f", "/init.cql"]
-    restart: "no"
+      retries: 30
+      start_period: 90s
 
   # ---------------------------------------------------------------- grafo
+  # Grafo (Fase 7): Cliente -COMPROU-> Sku, para recomendações. Memória
+  # reduzida; o grafo é DERIVADO dos pedidos e se reconstrói a partir deles.
   neo4j:
     image: neo4j:2026.10.1-community
-    profiles: [nosql]
     environment:
       NEO4J_AUTH: neo4j/marketplace123
-      NEO4J_server_memory_heap_max__size: 512m
-      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_server_memory_heap_initial__size: 192m
+      NEO4J_server_memory_heap_max__size: 256m
+      NEO4J_server_memory_pagecache_size: 96m
     ports:
-      - "7474:7474"   # Neo4j Browser (http://localhost:7474)
-      - "7687:7687"   # protocolo Bolt
+      - "${NEO4J_HTTP_PORT:-7474}:7474"   # Neo4j Browser (http://localhost:7474)
+      - "${NEO4J_BOLT_PORT:-7687}:7687"   # protocolo Bolt
     volumes:
       - neo4jdata:/data
     healthcheck:

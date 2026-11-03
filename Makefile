@@ -1,5 +1,5 @@
 # Atalhos do projeto. `make help` lista tudo.
-.PHONY: pgbench help up up-nosql up-ha up-tools up-all down reset logs ps psql mongosh redis-cli cqlsh cypher \
+.PHONY: pgbench help up up-ha up-tools up-all down reset logs ps psql mongosh redis-cli cqlsh cypher \
         backend-run frontend-dev migration sqlc seed check check-backend check-frontend check-db e2e links
 
 COMPOSE := docker compose
@@ -7,11 +7,9 @@ COMPOSE := docker compose
 help: ## Lista os comandos
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
 
-up: ## Sobe o núcleo (postgres, mongo, redis, api, web)
+up: ## Sobe o núcleo (postgres + réplica, pgbouncer, mongo, redis, cassandra, neo4j, api, web)
 	$(COMPOSE) up -d --build
 
-up-nosql: ## Sobe núcleo + cassandra + neo4j
-	$(COMPOSE) --profile nosql up -d --build
 
 up-ha: ## Sobe núcleo + clusters de alta disponibilidade (Patroni/etcd/HAProxy, Mongo rsha, Redis Sentinel; ~600 MB)
 	$(COMPOSE) --profile ha up -d --build
@@ -20,19 +18,19 @@ up-tools: ## Sobe núcleo + pgAdmin + RedisInsight
 	$(COMPOSE) --profile tools up -d --build
 
 up-all: ## Sobe tudo
-	$(COMPOSE) --profile nosql --profile ha --profile tools up -d --build
+	$(COMPOSE) --profile ha --profile tools up -d --build
 
 down: ## Para os containers (mantém os dados)
-	$(COMPOSE) --profile nosql --profile tools down
+	$(COMPOSE) --profile ha --profile tools down
 
 reset: ## Para e APAGA todos os volumes (dados)
-	$(COMPOSE) --profile nosql --profile tools down -v
+	$(COMPOSE) --profile ha --profile tools down -v
 
 logs: ## Acompanha os logs (ex.: make logs s=api)
 	$(COMPOSE) logs -f $(s)
 
 ps: ## Estado dos containers
-	$(COMPOSE) --profile nosql --profile tools ps
+	$(COMPOSE) --profile ha --profile tools ps
 
 psql: ## Console do PostgreSQL
 	$(COMPOSE) exec postgres psql -U marketplace -d marketplace
