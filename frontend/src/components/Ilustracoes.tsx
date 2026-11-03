@@ -4,7 +4,7 @@ import { useId } from 'react'
 // ideia é o aluno ver a estrutura (linha do tempo de transações, versões na
 // página, partições, pool, cache) antes de ver os números do laboratório.
 
-type Tom = 'ok' | 'ruim' | 'espera' | 'neutro' | 'destaque' | 'apagado'
+export type Tom = 'ok' | 'ruim' | 'espera' | 'neutro' | 'destaque' | 'apagado'
 
 const TOM: Record<Tom, { fundo: string; borda: string; texto: string }> = {
   ok: { fundo: 'var(--il-ok-fundo)', borda: 'var(--il-ok)', texto: 'var(--il-texto)' },
@@ -15,10 +15,10 @@ const TOM: Record<Tom, { fundo: string; borda: string; texto: string }> = {
   apagado: { fundo: 'var(--il-apagado)', borda: 'var(--il-linha)', texto: 'var(--il-texto-3)' },
 }
 
-const CINZA = 'var(--il-cinza)'
+export const CINZA = 'var(--il-cinza)'
 
 /** Caixa com texto de várias linhas ("\n" quebra a linha). */
-function Caixa({ x, y, w, h, texto, tom = 'neutro', fonte = 11, tracejada }: {
+export function Caixa({ x, y, w, h, texto, tom = 'neutro', fonte = 11, tracejada }: {
   x: number; y: number; w: number; h: number; texto: string; tom?: Tom; fonte?: number; tracejada?: boolean
 }) {
   const c = TOM[tom]
@@ -37,7 +37,7 @@ function Caixa({ x, y, w, h, texto, tom = 'neutro', fonte = 11, tracejada }: {
 }
 
 /** Marcador de seta com id único por SVG (vários desenhos na mesma página). */
-function useSeta(cor = CINZA) {
+export function useSeta(cor = CINZA) {
   const id = `seta-${useId().replace(/:/g, '')}`
   const def = (
     <defs>

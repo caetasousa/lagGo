@@ -2,7 +2,7 @@ import { UsoSelo } from '../../components/usos'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, brl, post, put, type Carrinho, type DetalheProduto } from '../../api/client'
+import { api, brl, post, put, type Carrinho, type DetalheProduto, type Recomendacao } from '../../api/client'
 import { Async } from '../../components/Async'
 import { Explicacao } from '../../components/ui'
 import { ImagemProduto } from '../../components/ImagemProduto'
@@ -56,6 +56,7 @@ export function ProdutoPage() {
               <Ofertas d={d} />
             </div>
             <Avaliacoes d={d} />
+            <Recomendacoes produtoId={d.produto.id} />
           </>
         )}
       </Async>
@@ -146,5 +147,38 @@ function Avaliacoes({ d }: { d: DetalheProduto }) {
         {avaliar.isError && <p className="error">{avaliar.error.message}</p>}
       </form>
     </>
+  )
+}
+
+// "Quem comprou também comprou" (Fase 7, Neo4j): o grafo de compras, a dois
+// saltos dos SKUs deste produto. Se o Neo4j estiver fora, o bloco diz isso e a
+// página segue (cenário Y4).
+function Recomendacoes({ produtoId }: { produtoId: string }) {
+  // Uma nova tentativa (o padrão do app): a primeira conexão ao Neo4j pode
+  // passar do prazo de 3 s da API numa máquina ocupada — falha passageira num
+  // bloco secundário. Com o Neo4j fora de verdade, o bloco desiste em ~7 s e
+  // o resto da página nunca espera por ele (Y4).
+  const q = useQuery({ queryKey: ['recomendacoes', produtoId], queryFn: () => api<Recomendacao[]>(`/catalogo/produtos/${produtoId}/recomendacoes`), retry: 1 })
+  return (
+    <section>
+      <h2>Quem comprou também comprou <UsoSelo id="neo4j-grafo" /></h2>
+      <p className="muted small">Clientes que compraram este produto também levaram… A força é quantos clientes distintos compraram os dois (dois saltos no grafo: produto ← clientes → outros produtos). <Link to="/lab/grafo">Compare com o SQL</Link>.</p>
+      {q.isError && <p className="muted small">Recomendações indisponíveis agora ({q.error.message}).</p>}
+      {q.data && q.data.length === 0 && <p className="muted small">Ninguém comprou este produto junto com outro ainda.</p>}
+      {q.data && q.data.length > 0 && (
+        <ul className="carrossel lista-limpa" aria-label="Quem comprou também comprou">
+          {q.data.map((r) => (
+            <li key={r.produto_id} className="card-produto" data-forca={r.forca}>
+              <ImagemProduto nome={r.nome} categoria="" />
+              <div className="corpo">
+                <Link to={`/loja/produto/${r.produto_id}`}>{r.nome}</Link>
+                <span className="preco">{brl(r.preco)}</span>
+                <span className="muted small">força {r.forca} ({r.forca === 1 ? '1 cliente' : `${r.forca} clientes`})</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }

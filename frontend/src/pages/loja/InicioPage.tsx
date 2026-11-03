@@ -1,7 +1,8 @@
 import { UsoSelo } from '../../components/usos'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { api, brl, type Busca, type Categoria, type MaisVendido } from '../../api/client'
+import { api, brl, type Busca, type Categoria, type MaisVendido, type Visto } from '../../api/client'
+import { useConta } from '../../conta'
 import { Explicacao } from '../../components/ui'
 import { ImagemProduto, iconeCategoria } from '../../components/ImagemProduto'
 
@@ -45,6 +46,8 @@ export function InicioPage() {
         ))}
       </div>
 
+      <VistosRecentes />
+
       <h2>Mais vendidos <UsoSelo id="redis-ranking" /></h2>
       <p className="muted small">Um <em>sorted set</em>: cada compra soma pontos ao produto (ZINCRBY); a vitrine lê os maiores (ZREVRANGE).</p>
       <div className="carrossel" aria-label="Mais vendidos">
@@ -73,6 +76,35 @@ export function InicioPage() {
           </article>
         ))}
       </div>
+    </>
+  )
+}
+
+// "Vistos recentemente" (Fase 7, Cassandra): só para quem entrou. Cada produto
+// aberto é um evento numa partição do cliente, com TTL de 30 dias.
+function VistosRecentes() {
+  const { conta } = useConta()
+  const q = useQuery({ queryKey: ['vistos', conta?.cliente_id], queryFn: () => api<Visto[]>('/conta/vistos'), enabled: !!conta, retry: false })
+  if (!conta) return null
+  return (
+    <>
+      <h2>Vistos recentemente <UsoSelo id="cassandra-vistos" /></h2>
+      <p className="muted small">Uma partição do Cassandra por cliente, já em ordem (mais novo primeiro); cada visita some sozinha em 30 dias (TTL).</p>
+      {q.isError && <p className="muted small">Histórico indisponível agora ({q.error.message}).</p>}
+      {q.data && q.data.length === 0 && <p className="muted small">Abra alguns produtos: eles aparecem aqui.</p>}
+      {q.data && q.data.length > 0 && (
+        <ul className="carrossel lista-limpa" aria-label="Vistos recentemente">
+          {q.data.map((v) => (
+            <li key={v.produto_id} className="card-produto">
+              <ImagemProduto nome={v.nome} categoria="" />
+              <div className="corpo">
+                <Link to={`/loja/produto/${v.produto_id}`}>{v.nome}</Link>
+                <span className="muted small">visto em {new Date(v.em).toLocaleString('pt-BR')}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   )
 }

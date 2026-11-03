@@ -1,6 +1,7 @@
 import { Link } from 'react-router'
 import { Tutorial, type Passo } from './Tutorial'
 import { IlustracaoBackups, IlustracaoCache, IlustracaoConexoes, IlustracaoParticoes, IlustracaoQuorum, IlustracaoReplicacao, IlustracaoTopologiaHA, IlustracaoVersoes, LinhaDoTempo } from './Ilustracoes'
+import { IlustracaoAnel, IlustracaoGrafoCompras, IlustracaoJoins, IlustracaoParticao } from './IlustracoesFase7'
 
 // Os tutoriais "do zero" dos laboratórios (cenário K4), no mesmo formato do
 // de Índices: passos curtos, uma ilustração, uma ligação com o laboratório e
@@ -1032,4 +1033,165 @@ const HA: Passo[] = [
 
 export function TutorialHA() {
   return <Tutorial titulo="Alta disponibilidade do zero" passos={HA} />
+}
+
+// ======================================================================== Consistência ajustável (Fase 7, Cassandra)
+
+const CONSISTENCIA: Passo[] = [
+  {
+    titulo: '1. Sem mestre: o anel',
+    corpo: (
+      <>
+        <IlustracaoAnel />
+        <p>No Cassandra não existe primário. Os nós formam um <strong>anel</strong>: a chave da partição vira um número (token) e cai num ponto do anel; o dado é copiado nos próximos nós, tantos quanto o <strong>fator de replicação</strong> (RF). Qualquer nó aceita leitura e escrita e repassa às réplicas.</p>
+        <dl>
+          <dt>RF</dt><dd>quantas cópias de cada dado existem (aqui, 1 ou 3).</dd>
+          <dt>Coordenador</dt><dd>o nó que recebeu a requisição e fala com as réplicas.</dd>
+        </dl>
+      </>
+    ),
+    fontes: ['cass_dynamo', 'dynamo_artigo', 'cassandra_artigo'],
+  },
+  {
+    titulo: '2. Quantas réplicas precisam responder?',
+    corpo: (
+      <>
+        <p>Cada leitura e cada escrita escolhem o seu <strong>nível de consistência</strong>: quantas réplicas o coordenador espera antes de responder.</p>
+        <dl>
+          <dt>ONE</dt><dd>1 réplica basta — o mais rápido e o mais disponível.</dd>
+          <dt>QUORUM</dt><dd>a maioria: RF/2 + 1 (com RF=3, 2 réplicas).</dd>
+          <dt>ALL</dt><dd>todas as RF — a mais forte e a mais frágil: uma réplica fora derruba a operação.</dd>
+        </dl>
+      </>
+    ),
+    fontes: ['cass_consistencia', 'cass_cqlsh'],
+  },
+  {
+    titulo: '3. R + W > RF',
+    corpo: (
+      <>
+        <p>Se as réplicas que a <strong>leitura</strong> consulta (R) mais as que a <strong>escrita</strong> esperou (W) somam mais que RF, as duas <em>sempre se cruzam</em> em pelo menos uma réplica — e a leitura vê a última escrita. Com RF=3: QUORUM + QUORUM = 2 + 2 &gt; 3 ✔; ONE + ONE = 2 ✘ (pode ler uma réplica que ainda não recebeu).</p>
+        <p>É o mesmo raciocínio de quórum do Dynamo (N, R, W), de onde o Cassandra herdou o desenho.</p>
+      </>
+    ),
+    fontes: ['cass_escolher', 'dynamo_artigo', 'ddia_modelos'],
+  },
+  {
+    titulo: '4. O preço: disponibilidade',
+    corpo: (
+      <>
+        <IlustracaoAnel vivos={1} nivel="QUORUM" />
+        <p>Se não houver réplicas vivas suficientes, o Cassandra <strong>recusa</strong> a operação (<code>Unavailable</code>) em vez de responder com dado possivelmente velho. É o teorema <strong>CAP</strong> na prática: numa falha, escolher entre consistência (recusar) e disponibilidade (responder com o que tiver).</p>
+        <p><strong>PACELC</strong> completa: mesmo sem falha, esperar mais réplicas custa <em>latência</em>.</p>
+      </>
+    ),
+    fontes: ['cap_artigo', 'pacelc_artigo', 'cass_escolher'],
+  },
+  {
+    titulo: '5. Modelar pela consulta',
+    corpo: (
+      <>
+        <IlustracaoParticao />
+        <p>No Cassandra não há JOIN: cria-se <strong>uma tabela por pergunta</strong>. "Vistos recentemente" é <code>vistos_por_cliente</code>: partição = cliente (tudo dele junto, num nó), clustering = instante decrescente (já vem em ordem). O nome do produto vai copiado na linha (desnormalização). Cada linha tem <strong>TTL</strong>: some sozinha em 30 dias.</p>
+        <p>Escrever é barato porque o Cassandra só acrescenta (commit log + memtable → SSTables imutáveis, uma árvore LSM).</p>
+      </>
+    ),
+    fontes: ['cass_modelagem', 'cass_ttl', 'cass_lsm'],
+  },
+  {
+    titulo: '6. Como usar o laboratório',
+    corpo: (
+      <>
+        <p>O cluster de estudo tem <strong>um nó</strong> (três não caberiam na memória). O truque: um keyspace com <strong>RF=3</strong> nesse nó único — para o Cassandra, é um anel em que só 1 das 3 réplicas existe, como se dois nós estivessem fora.</p>
+        <ol>
+          <li>Rode com <strong>RF=1</strong>: os três níveis funcionam (1 réplica, e ela está viva).</li>
+          <li>Rode com <strong>RF=3</strong>: ONE funciona; QUORUM e ALL falham — e a mensagem do Cassandra diz quantas réplicas faltaram.</li>
+          <li>Repita à mão: <code>make cqlsh</code>, <code>CONSISTENCY QUORUM;</code> e um <code>SELECT</code> em <code>lab_rf3.contas</code>.</li>
+        </ol>
+      </>
+    ),
+    fontes: ['cass_cqlsh', 'cass_consistencia'],
+  },
+]
+
+export function TutorialConsistencia() {
+  return <Tutorial titulo="Consistência ajustável do zero" passos={CONSISTENCIA} />
+}
+
+// ======================================================================== Grafos (Fase 7, Neo4j)
+
+const GRAFO: Passo[] = [
+  {
+    titulo: '1. Nós e relacionamentos',
+    corpo: (
+      <>
+        <IlustracaoGrafoCompras />
+        <p>Um <strong>grafo de propriedades</strong> tem <strong>nós</strong> (com rótulos, como <code>:Cliente</code> e <code>:Sku</code>) e <strong>relacionamentos</strong> com tipo e direção (<code>-[:COMPROU]-&gt;</code>), os dois com propriedades (<code>unidades</code>).</p>
+        <p>Aqui o grafo nasce dos pedidos do PostgreSQL: cada par (cliente, SKU) comprado vira uma aresta.</p>
+      </>
+    ),
+    fontes: ['neo4j_cypher', 'neo4j_modelagem'],
+  },
+  {
+    titulo: '2. Cypher: desenhar o padrão',
+    corpo: (
+      <>
+        <p>Em <strong>Cypher</strong> a consulta é um desenho do caminho procurado:</p>
+        <pre className="sql">{`MATCH (:Sku {id: $x})<-[:COMPROU]-(c:Cliente)-[:COMPROU]->(outro:Sku)
+RETURN outro.id, count(DISTINCT c) AS forca
+ORDER BY forca DESC LIMIT 10`}</pre>
+        <p>"Do SKU X, volte para quem o comprou, e daí vá para o que eles também compraram." O Cypher é a base do <strong>GQL</strong>, o padrão ISO de 2024 para consultas a grafos.</p>
+      </>
+    ),
+    fontes: ['neo4j_match', 'neo4j_gql'],
+  },
+  {
+    titulo: '3. A mesma pergunta em SQL',
+    corpo: (
+      <>
+        <IlustracaoJoins />
+        <p>No relacional, "andar uma aresta" é um <strong>JOIN</strong> — e aqui cada salto passa por duas tabelas (<code>item_pedido</code> → <code>pedido</code>). Dois saltos: quatro tabelas, e as linhas intermediárias se multiplicam antes do <code>GROUP BY</code>.</p>
+      </>
+    ),
+    fontes: ['pg_joins', 'livro_grafos'],
+  },
+  {
+    titulo: '4. Index-free adjacency',
+    corpo: (
+      <>
+        <p>No Neo4j, cada nó guarda <strong>ponteiros diretos</strong> para os seus relacionamentos. Ir de um cliente às compras dele não consulta índice nenhum: segue o ponteiro. O custo de um salto depende de <em>quantos vizinhos</em> o nó tem, não do tamanho do banco.</p>
+        <p>No SQL, cada JOIN consulta um índice (ou varre a tabela) — custo que cresce com o tamanho das tabelas e se repete a cada salto.</p>
+      </>
+    ),
+    fontes: ['livro_grafos', 'ddia_modelos'],
+  },
+  {
+    titulo: '5. Dado derivado e MERGE',
+    corpo: (
+      <>
+        <IlustracaoGrafoCompras saltos={3} />
+        <p>O grafo é uma <strong>cópia derivada</strong> dos pedidos: depois do COMMIT no PostgreSQL, a compra vai para o Neo4j com <code>MERGE</code> (cria só o que falta; repetir não duplica). Se o Neo4j estiver fora, a compra vale assim mesmo — e o botão "Reconstruir" refaz o grafo inteiro a partir dos pedidos, em lotes (<code>CALL … IN TRANSACTIONS</code>).</p>
+        <p>A restrição de unicidade em <code>Cliente.id</code> e <code>Sku.id</code> cria o índice que o MERGE usa para achar o nó.</p>
+      </>
+    ),
+    fontes: ['neo4j_merge', 'neo4j_restricoes', 'neo4j_em_lotes'],
+  },
+  {
+    titulo: '6. Como usar o laboratório',
+    corpo: (
+      <>
+        <ol>
+          <li><strong>Reconstrua o grafo</strong> a partir dos pedidos (se ele estiver vazio ou desatualizado).</li>
+          <li>Escolha um SKU e a pergunta: "também comprou" (2 saltos) ou "alcance" (3 saltos: quem <em>não</em> comprou X, mas comprou o que os compradores de X compraram).</li>
+          <li>Compare tempo e resposta. As duas têm de <strong>bater</strong> — senão a comparação de desempenho não vale.</li>
+        </ol>
+        <p>Cuidado com a semântica: num <code>MATCH</code> o mesmo relacionamento não se repete no caminho; num self-join do SQL, sim. Por isso o "alcance" exclui quem comprou X — assim as duas perguntas são a mesma.</p>
+      </>
+    ),
+    fontes: ['neo4j_unicidade', 'pg_with'],
+  },
+]
+
+export function TutorialGrafo() {
+  return <Tutorial titulo="Grafos do zero" passos={GRAFO} />
 }

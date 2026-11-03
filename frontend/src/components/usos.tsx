@@ -12,6 +12,7 @@ export type IdUso =
   | 'mongo-catalogo' | 'mongo-avaliacoes'
   | 'redis-cache' | 'redis-carrinho' | 'redis-ranking' | 'redis-rate-limit' | 'redis-stream' | 'redis-sessao'
   | 'pgbouncer-pool'
+  | 'cassandra-vistos' | 'cassandra-consistencia' | 'neo4j-grafo'
 
 export type Uso = {
   banco: NomeBanco
@@ -70,6 +71,15 @@ export const USOS: Record<IdUso, Uso> = {
   'mongo-avaliacoes': { banco: 'MongoDB', rotulo: 'avaliações', estrutura: 'coleção avaliacoes + resumo dentro do produto',
     chave: 'avaliacoes · produtos.avaliacoes_recentes', porque: 'as 3 últimas e a média ficam no produto (lidas junto); todas ficam numa coleção à parte.',
     comandos: 'insertOne + updateOne numa transação' },
+  'cassandra-vistos': { banco: 'Cassandra', rotulo: 'vistos recentemente', estrutura: 'tabela wide-column: uma partição por cliente, ordenada pelo instante (mais novo primeiro), TTL de 30 dias',
+    chave: 'marketplace.vistos_por_cliente', porque: 'escrever um evento a cada página aberta é barato no Cassandra (árvore LSM: só acrescenta), e a pergunta "o que ESTE cliente viu" lê uma partição só, já em ordem.',
+    comandos: 'INSERT … USING TTL 2592000 · SELECT … WHERE cliente_id = ? LIMIT 48' },
+  'cassandra-consistencia': { banco: 'Cassandra', rotulo: 'consistência ajustável', estrutura: 'keyspaces lab_rf1 e lab_rf3 (SimpleStrategy) num nó só',
+    chave: 'lab_rf1.contas · lab_rf3.contas', porque: 'com RF=3 e só um nó, o anel tem 1 das 3 réplicas: dá para ver ONE funcionar e QUORUM/ALL falharem por falta de réplicas — a troca entre consistência e disponibilidade.',
+    comandos: 'CONSISTENCY ONE | QUORUM | ALL · INSERT · SELECT' },
+  'neo4j-grafo': { banco: 'Neo4j', rotulo: 'grafo de compras', estrutura: 'nós Cliente e Sku, relacionamento COMPROU {unidades}',
+    chave: '(:Cliente)-[:COMPROU]->(:Sku)', porque: '"quem comprou também comprou" é andar pelos vizinhos dos vizinhos: no grafo, cada nó aponta direto para os seus relacionamentos; no SQL, cada salto vira JOINs.',
+    comandos: 'MERGE (c)-[:COMPROU]->(s) · MATCH (:Sku)<-[:COMPROU]-(:Cliente)-[:COMPROU]->(outro)' },
   'redis-cache': { banco: 'Redis', rotulo: 'cache do produto', estrutura: 'STRING com o JSON do documento, expira em 5 min (TTL)',
     chave: 'cache:produto:{id}', porque: 'a página do produto é muito lida e pouco alterada; guardar uma cópia na memória evita ir ao MongoDB toda vez.',
     comandos: 'GET → (se não existe) SET … EX 300 · DEL ao entrar avaliação' },

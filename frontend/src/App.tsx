@@ -23,6 +23,8 @@ import { CachePage } from './pages/labs/CachePage'
 import { ReplicacaoPage } from './pages/labs/ReplicacaoPage'
 import { BackupPage } from './pages/labs/BackupPage'
 import { HAPage } from './pages/labs/HAPage'
+import { ConsistenciaPage } from './pages/labs/ConsistenciaPage'
+import { GrafoPage } from './pages/labs/GrafoPage'
 import { PainelDBAPage } from './pages/dba/PainelDBAPage'
 
 // O material de estudo (docs/*.md + renderizador) só é baixado quando aberto.
@@ -56,6 +58,8 @@ export function App() {
           <Route path="/lab/replicacao" element={<ReplicacaoPage />} />
           <Route path="/lab/backup" element={<BackupPage />} />
           <Route path="/lab/ha" element={<HAPage />} />
+          <Route path="/lab/consistencia" element={<ConsistenciaPage />} />
+          <Route path="/lab/grafo" element={<GrafoPage />} />
           <Route path="/dba" element={<PainelDBAPage />} />
           <Route path="/estudo" element={<Suspense fallback={<p className="muted">Carregando…</p>}><EstudoPage /></Suspense>} />
           <Route path="/estudo/:slug" element={<Suspense fallback={<p className="muted">Carregando…</p>}><DocumentoPage /></Suspense>} />

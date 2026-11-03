@@ -18,7 +18,7 @@ type Lab = {
 type Servico = {
   id: string             // o nome do serviço no docker-compose.yml
   banco: NomeBanco
-  perfil?: 'nosql' | 'ha' // só sobe com o perfil (make up-nosql / make up-ha)
+  perfil?: 'ha'          // só sobe com o perfil (make up-ha)
   servicos?: string      // quando a seção reúne vários serviços do compose
   papel: ReactNode       // o que este serviço faz na loja
   labs: Lab[]
@@ -133,23 +133,23 @@ const SERVICOS: Servico[] = [
   },
   {
     id: 'cassandra', material: ['07-nosql'],
-    banco: 'Cassandra', perfil: 'nosql',
-    papel: 'Wide-column: eventos de navegação ("vistos recentemente") com TTL, escritos em grande volume.',
+    banco: 'Cassandra',
+    papel: 'Wide-column: os eventos de navegação ("vistos recentemente"), uma partição por cliente, com TTL de 30 dias.',
     labs: [
-      { titulo: 'Consistência ajustável', topico: '8.8', fase: 'Fase 7',
-        frase: 'ONE, QUORUM e ALL com um nó desligado.' },
+      { titulo: 'Consistência ajustável', topico: '8.8', para: '/lab/consistencia',
+        frase: 'ONE, QUORUM e ALL num anel em que só 1 das 3 réplicas existe: quem funciona e quem falha.' },
     ],
-    veja: [],
+    veja: [{ texto: 'Vistos recentemente (página inicial, logado)', para: '/' }],
   },
   {
     id: 'neo4j', material: ['07-nosql'],
-    banco: 'Neo4j', perfil: 'nosql',
-    papel: 'Grafo: Cliente –COMPROU→ Produto, para recomendações.',
+    banco: 'Neo4j',
+    papel: 'Grafo: (Cliente)–COMPROU→(Sku), derivado dos pedidos, para o "quem comprou também comprou".',
     labs: [
-      { titulo: 'Grafo × SQL recursivo', topico: '8.8', fase: 'Fase 7', usa: ['postgres'],
-        frase: '"Quem comprou também comprou" em Cypher e em SQL, lado a lado.' },
+      { titulo: 'Grafo × SQL', topico: '8.8', para: '/lab/grafo', usa: ['postgres'],
+        frase: '"Quem comprou também comprou" e o alcance em 3 saltos, em Cypher e em SQL, lado a lado.' },
     ],
-    veja: [],
+    veja: [{ texto: 'Recomendações na página do produto', para: '/loja' }],
   },
 ]
 
@@ -177,7 +177,6 @@ export function LabsPage() {
             </h2>
             <p className="muted">{s.papel}</p>
             {s.servicos && <p className="small">Serviços: <code>{s.servicos}</code></p>}
-            {s.perfil === 'nosql' && <p className="muted small">Não sobe no dia a dia nem nos testes: o projeto só começa a usá-lo na Fase 7.</p>}
             {s.perfil === 'ha' && <p className="muted small">Fica fora do dia a dia para poupar memória (~600 MB os três clusters): suba com <code>make up-ha</code>. O E2E sobe para testar o failover.</p>}
             {s.semLab && <p className="small">{s.semLab}</p>}
             <div className="grade-labs">

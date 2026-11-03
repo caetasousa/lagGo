@@ -464,3 +464,22 @@ export type EnsaioHA = {
 }
 
 export type EstadoHA = { clusters: Record<TecnologiaHA, EstadoClusterHA>; ensaio: EnsaioHA | null }
+
+// ------------------------------------------------------------ Fase 7 (Cassandra e Neo4j)
+
+export type Visto = { produto_id: string; nome: string; em: string }
+export type Recomendacao = { produto_id: string; nome: string; preco: number; forca: number }
+export type EstadoDoGrafo = { clientes: number; skus: number; compras: number; duracao_ms?: number; lidas_do_postgres?: number }
+
+export type NivelConsistencia = 'ONE' | 'QUORUM' | 'ALL'
+export type TentativaConsistencia = {
+  nivel: NivelConsistencia; necessarias: number; escreveu: boolean; erro_escrita?: string
+  leu: boolean; erro_leitura?: string; ms: number; forte_com_ele: boolean
+}
+export type ResultadoConsistencia = { rf: number; replicas_vivas: number; keyspace: string; tentativas: TentativaConsistencia[] }
+
+export type PerguntaGrafo = 'tambem_comprou' | 'alcance'
+export type LinhaGrafo = { sku_id: string; forca: number }
+export type MedidaGrafo = { banco: string; consulta: string; ms: number; linhas: LinhaGrafo[]; total: number }
+export type ResultadoGrafo = { pergunta: PerguntaGrafo; sku_id: string; grafo: MedidaGrafo; sql: MedidaGrafo; iguais: boolean }
+export type SkuParaOGrafo = { id: string; descricao: string; compradores: number }
