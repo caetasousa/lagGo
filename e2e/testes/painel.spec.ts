@@ -1,12 +1,11 @@
 import { test, expect, cartaoBanco, abrirProduto, adicionarAoCarrinho } from './base'
 
-test('[G1] núcleo no ar; Cassandra e Neo4j desabilitados (não sobem antes da Fase 7)', async ({ page }) => {
+test('[G1] os seis bancos do núcleo no ar, inclusive Cassandra e Neo4j (Fase 7)', async ({ page }) => {
   await page.goto('/dba')
-  for (const nome of ['PostgreSQL', 'PostgreSQL réplica', 'MongoDB', 'Redis']) {
-    await expect(cartaoBanco(page, nome).locator('.card-status'), nome).toHaveText('up')
-  }
-  for (const nome of ['Cassandra', 'Neo4j']) {
-    await expect(cartaoBanco(page, nome).locator('.card-status'), nome).toHaveText('disabled')
+  for (const nome of ['PostgreSQL', 'PostgreSQL réplica', 'MongoDB', 'Redis', 'Cassandra', 'Neo4j']) {
+    // O painel relê o health a cada poucos segundos; o Cassandra pode ter
+    // acabado de subir (a API conecta nele sob demanda).
+    await expect(cartaoBanco(page, nome).locator('.card-status'), nome).toHaveText('up', { timeout: 30_000 })
   }
 })
 

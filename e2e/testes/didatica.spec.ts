@@ -46,6 +46,8 @@ test('[K2] cada laboratório diz que recurso usa', async ({ page }) => {
     ['/lab/replicacao', /PostgreSQL · réplica de leitura/],
     ['/lab/backup', /PostgreSQL · backup e WAL arquivado/],
     ['/lab/ha', /PostgreSQL · cluster Patroni/],
+    ['/lab/consistencia', /Cassandra · consistência ajustável/],
+    ['/lab/grafo', /Neo4j · grafo de compras/],
   ]
   for (const [url, uso] of esperado) {
     await page.goto(url)
@@ -84,6 +86,8 @@ test('[K4] todo laboratório tem o tutorial "do zero", com ilustração e fontes
     ['/lab/replicacao', 'Replicação do zero'],
     ['/lab/backup', 'Backup e PITR do zero'],
     ['/lab/ha', 'Alta disponibilidade do zero'],
+    ['/lab/consistencia', 'Consistência ajustável do zero'],
+    ['/lab/grafo', 'Grafos do zero'],
   ]
   for (const [url, nome] of labs) {
     await page.goto(url)
@@ -123,7 +127,7 @@ test('[K3] cada opção, experimento e laboratório diz de onde veio', async ({ 
   await expect(page.getByRole('region', { name: 'O experimento' }).getByRole('region', { name: 'Fontes deste experimento' }))
     .toContainText('Indexes on Expressions')
 
-  for (const url of ['/lab', '/lab/isolamento', '/lab/mvcc', '/lab/expurgo', '/lab/conexoes', '/lab/cache', '/indices', '/lab/replicacao', '/lab/backup', '/lab/ha']) {
+  for (const url of ['/lab', '/lab/isolamento', '/lab/mvcc', '/lab/expurgo', '/lab/conexoes', '/lab/cache', '/indices', '/lab/replicacao', '/lab/backup', '/lab/ha', '/lab/consistencia', '/lab/grafo']) {
     await page.goto(url)
     if (url !== '/indices') {
       await expect(page.getByRole('region', { name: 'Sobre esta opção' }).first()
@@ -144,7 +148,7 @@ test('[K3] cada opção, experimento e laboratório diz de onde veio', async ({ 
 
 // Como quebra: a lista volta a ser uma grade única; um laboratório vai para o
 // serviço errado (Conexões em "postgres", Cache em "mongo"); um serviço sem
-// laboratório (mongo) ou só de perfil (cassandra, neo4j) some da página.
+// laboratório (mongo) some da página; Cassandra e Neo4j (Fase 7) ganham os seus.
 test('[K5] os laboratórios aparecem agrupados pelos serviços do docker compose', async ({ page }) => {
   await page.goto('/labs')
   const servico = (nome: string) => page.getByRole('region', { name: `Serviço ${nome}`, exact: true })
@@ -156,6 +160,8 @@ test('[K5] os laboratórios aparecem agrupados pelos serviços do docker compose
     ['patroni', [/Failover com Patroni/]],
     ['mongo-ha', [/Eleição no replica set/]],
     ['redis-ha', [/Failover com Sentinel/]],
+    ['cassandra', [/Consistência ajustável/]],
+    ['neo4j', [/Grafo × SQL/]],
   ]
   for (const [nome, labs] of esperado) {
     for (const lab of labs) await expect(servico(nome).locator('.grade-labs').getByRole('link', { name: lab }), `${nome}: ${lab}`).toBeVisible()
@@ -163,10 +169,6 @@ test('[K5] os laboratórios aparecem agrupados pelos serviços do docker compose
   await expect(servico('postgres').locator('.grade-labs').getByRole('link', { name: /Conexões/ })).toHaveCount(0)
   await expect(servico('mongo')).toContainText('Ainda sem laboratório próprio')
   await expect(servico('mongo').getByRole('link', { name: 'Laboratório de Cache' })).toBeVisible()
-  for (const nome of ['cassandra', 'neo4j']) {
-    await expect(servico(nome), nome).toContainText('perfil nosql')
-    await expect(servico(nome), nome).toContainText('Fase 7')
-  }
   await servico('pgbouncer').getByRole('link', { name: /Conexões e PgBouncer/ }).click()
   await expect(page).toHaveURL(/\/lab\/conexoes$/)
 })

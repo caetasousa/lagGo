@@ -9,11 +9,11 @@ como **lacuna declarada**, não como esquecimento.
 Os testes rodam contra o stack do núcleo (frontend de produção no nginx, API,
 PostgreSQL e a sua réplica, PgBouncer, MongoDB e Redis) e os clusters de alta
 disponibilidade (perfil `ha`, Fase 5) num projeto compose isolado (`nosqlgo-e2e`),
-semeado do zero a cada execução. Cassandra e Neo4j **não** sobem: entram na
-suíte quando a Fase 7 começar a usá-los. Nada aqui toca no banco de quem desenvolve.
+semeado do zero a cada execução. Desde a Fase 7, Cassandra e Neo4j
+também sobem (com memória reduzida). Nada aqui toca no banco de quem desenvolve.
 
 Alguns cenários não cabem no navegador e são cobertos noutra camada, indicada
-na própria linha: Q7 e W1–W3 (integração, `internal/app`), S6 e S7 (integração, `internal/laboratorio/aplicacao`), S8 (verificação manual: precisa recriar contêineres) e U6 (unidade, `internal/laboratorio/aplicacao`).
+na própria linha: Q7, W1–W3, X2, X4, X5 e Y4 (integração, `internal/app`), S6 e S7 (integração, `internal/laboratorio/aplicacao`), S8 (verificação manual: precisa recriar contêineres) e U6 (unidade, `internal/laboratorio/aplicacao`).
 
 ## L. Loja simulada e didática (Fase 4)
 
@@ -76,6 +76,25 @@ Cobertos na camada de integração (`internal/app`), contra o PostgreSQL de verd
 | W1 | sem Row-Level Security, um erro de `WHERE` no código entrega pedidos de outros clientes: o papel `loja_cliente` enxerga linhas que não são da sessão (integração: `internal/app`) | o banco não defende o dado |
 | W2 | o papel dos relatórios (`relatorio_leitura`) consegue escrever ou apagar (integração: `internal/app`) | um relatório com bug destrói dados |
 | W3 | o CPF fica em texto no banco, ou a busca por CPF repetido precisa decifrar todos (integração: `internal/app`) | dado pessoal legível num dump |
+
+## X. Cassandra: eventos e consistência ajustável (Fase 7, tópico 8.8)
+
+| id | Como quebra | O que o usuário vê |
+|---|---|---|
+| X1 | abrir produtos logado não alimenta "Vistos recentemente": o mais novo não vem primeiro, o mesmo produto aparece repetido, ou a lista mistura o histórico de outra pessoa | vitrine pessoal errada |
+| X2 | o evento grava sem TTL (o histórico cresce para sempre, contra a retenção da LGPD) ou a consulta precisa de `ALLOW FILTERING` (varre o cluster) (integração: `internal/app`) | disco cheio, consulta lenta |
+| X3 | o Laboratório de Consistência mente: com RF=3 e só 1 réplica no ar, `QUORUM` ou `ALL` "funcionam", ou `ONE` falha | a regra R + W > RF ensinada errada |
+| X4 | com o Cassandra fora do ar, abrir o produto dá erro (o evento é um efeito secundário, não pode derrubar a página) (integração: `internal/app`) | loja quebrada por causa do histórico |
+| X5 | "excluir minha conta" deixa o histórico de navegação no Cassandra (o TTL só o apagaria em 30 dias) (integração: `internal/app`) | LGPD descumprida: o que a pessoa olhou sobrevive à conta |
+
+## Y. Neo4j: grafo e recomendações (Fase 7, tópico 8.8)
+
+| id | Como quebra | O que o usuário vê |
+|---|---|---|
+| Y1 | uma compra não entra no grafo (o "quem comprou também comprou" nunca muda) ou o grafo não se reconstrói a partir dos pedidos | recomendação congelada |
+| Y2 | a recomendação inclui o próprio produto, ou não vem ordenada pela força (quantos clientes compraram os dois) | sugestão sem sentido |
+| Y3 | o Laboratório Grafo × SQL compara consultas que respondem perguntas diferentes: o top da recomendação em Cypher e em SQL não bate | comparação de desempenho inválida |
+| Y4 | com o Neo4j fora do ar, a compra falha (o grafo é derivado: atualizá-lo é efeito depois do COMMIT) (integração: `internal/app`) | compra perdida por causa da recomendação |
 
 ## A. Catálogo (MongoDB · Fase 3)
 
@@ -209,7 +228,7 @@ Cobertos na camada de integração (`internal/app`), contra o PostgreSQL de verd
 
 | id | Como quebra | O que o usuário vê |
 |---|---|---|
-| G1 | um banco do núcleo aparece fora do ar, ou Cassandra/Neo4j aparecem "down" em vez de "disabled" | alarme falso no painel |
+| G1 | um banco do núcleo aparece fora do ar — desde a Fase 7, Cassandra e Neo4j fazem parte do núcleo e têm de aparecer "up" | alarme falso (ou silêncio) no painel |
 | G2 | uma compra não gera trilha na auditoria de dados | auditoria cega |
 | G3 | o painel não mostra o estado do Redis (chaves por prefixo, acertos de cache) e do MongoDB (coleções e índices) | sem visão dos bancos NoSQL |
 | G4 | o painel não mostra tamanho, tuplas mortas e último autovacuum de cada tabela, nem os índices nunca usados | manutenção às cegas |

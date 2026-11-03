@@ -4,9 +4,8 @@
 #
 # O stack é o docker-compose.yml da raiz num projeto próprio (nosqlgo-e2e),
 # com portas e variáveis de e2e/stack.env. Sobe SÓ o núcleo (postgres,
-# postgres-replica, pgbouncer, mongo, redis, api, web) e, desde a Fase 5, os
-# clusters de alta disponibilidade (perfil ha): Cassandra e Neo4j ficam de fora
-# até a Fase 7 usá-los.
+# postgres-replica, pgbouncer, mongo, redis, cassandra, neo4j, api, web) e,
+# desde a Fase 5, os clusters de alta disponibilidade (perfil ha).
 # Nasce com bancos vazios, é semeado, e morre no fim: nada aqui toca no banco
 # de quem desenvolve.
 #
@@ -23,7 +22,7 @@ cd "$raiz"
 
 projeto=nosqlgo-e2e
 # Fase 5: os clusters de alta disponibilidade (perfil ha) entram para os testes [U*].
-servicos=(postgres postgres-replica pgbouncer mongo redis api web
+servicos=(postgres postgres-replica pgbouncer mongo redis cassandra neo4j api web
 	etcd1 etcd2 etcd3 patroni1 patroni2 haproxy mongo-ha1 mongo-ha2 mongo-ha3
 	redis-ha1 redis-ha2 sentinel1 sentinel2 sentinel3)
 compose=(docker compose --project-directory "$raiz" -p "$projeto" --env-file "$raiz/e2e/stack.env"
