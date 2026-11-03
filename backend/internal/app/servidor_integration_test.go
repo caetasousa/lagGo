@@ -39,6 +39,17 @@ type servidor struct {
 
 func novoServidor(t *testing.T, opcoes ...app.Opcoes) *servidor {
 	t.Helper()
+	var op app.Opcoes
+	if len(opcoes) > 0 {
+		op = opcoes[0]
+	}
+	return novoServidorCom(t, op, nil)
+}
+
+// novoServidorCom: o mesmo servidor, com a chance de mexer nas conexões antes
+// de montar (a Fase 7 pluga Cassandra e Neo4j efêmeros, ou endereços mortos).
+func novoServidorCom(t *testing.T, op app.Opcoes, ajustar func(*app.Conexoes)) *servidor {
+	t.Helper()
 	pg := testinfra.Postgres(t)
 	mg, mgDB := testinfra.Mongo(t)
 	rdb := testinfra.Redis(t)
@@ -46,14 +57,14 @@ func novoServidor(t *testing.T, opcoes ...app.Opcoes) *servidor {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	var op app.Opcoes
-	if len(opcoes) > 0 {
-		op = opcoes[0]
-	}
 	if op.ChaveCPF == "" {
 		op.ChaveCPF = "chave-de-teste"
 	}
-	h, err := app.Montar(ctx, app.Conexoes{Postgres: pg, Mongo: mg, MongoDB: mgDB, Redis: rdb}, op)
+	con := app.Conexoes{Postgres: pg, Mongo: mg, MongoDB: mgDB, Redis: rdb}
+	if ajustar != nil {
+		ajustar(&con)
+	}
+	h, err := app.Montar(ctx, con, op)
 	if err != nil {
 		t.Fatal(err)
 	}

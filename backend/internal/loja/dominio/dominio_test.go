@@ -105,3 +105,13 @@ func TestCadastroRecusaDadosInvalidos(t *testing.T) {
 		}
 	}
 }
+
+// Como quebra (X1): o mesmo produto aparece repetido em "vistos
+// recentemente", ou o mais novo não vem primeiro.
+func TestDistintosMantemOrdemSemRepetir(t *testing.T) {
+	ev := []Visto{{ProdutoID: "c"}, {ProdutoID: "a"}, {ProdutoID: "c"}, {ProdutoID: "b"}, {ProdutoID: "a"}, {ProdutoID: "d"}}
+	got := Distintos(ev, 3)
+	if len(got) != 3 || got[0].ProdutoID != "c" || got[1].ProdutoID != "a" || got[2].ProdutoID != "b" {
+		t.Fatalf("[X1] distintos: %+v", got)
+	}
+}

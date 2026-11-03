@@ -1,8 +1,8 @@
 //go:build integration
 
 // Package testinfra sobe bancos EFÊMEROS para os testes de integração
-// (Testcontainers): PostgreSQL, MongoDB e Redis — só os bancos que o projeto
-// usa hoje. Cassandra e Neo4j entram aqui na Fase 7, não antes.
+// (Testcontainers): PostgreSQL, MongoDB, Redis e, desde a Fase 7, Cassandra
+// e Neo4j (nosql.go) — os bancos que o projeto usa.
 //
 // O que ele NÃO faz, de propósito:
 //
@@ -22,9 +22,11 @@
 package testinfra
 
 const (
-	imagemPostgres = "postgres:18.6-alpine"
-	imagemMongo    = "mongo:9.0.4"
-	imagemRedis    = "redis:8.10.3-alpine"
+	imagemPostgres  = "postgres:18.6-alpine"
+	imagemMongo     = "mongo:9.0.4"
+	imagemRedis     = "redis:8.10.3-alpine"
+	imagemCassandra = "cassandra:5.0.9"
+	imagemNeo4j     = "neo4j:2026.10.1-community"
 )
 
 // Encerrar derruba os containers do pacote. Chame no TestMain, depois de
@@ -33,4 +35,5 @@ func Encerrar() {
 	encerrarPostgres()
 	encerrarMongo()
 	encerrarRedis()
+	encerrarNoSQL()
 }

@@ -116,3 +116,25 @@ type ClusterHA interface {
 	// Conferir: quantas das escritas confirmadas estão no novo líder.
 	Conferir(ctx context.Context, rodada uuid.UUID, confirmadas []int) (int, error)
 }
+
+// ------------------------------------------------------------ Fase 7
+
+// Consistencia: o Cassandra, uma escrita e uma leitura com o nível pedido.
+type Consistencia interface {
+	Preparar(ctx context.Context, rf int) (keyspace string, err error)
+	Tentar(ctx context.Context, keyspace, nivel string) dominio.Tentativa
+	NosVivos(ctx context.Context) (int, error)
+}
+
+// GrafoLab: a pergunta respondida no Neo4j (Cypher).
+type GrafoLab interface {
+	TambemCompraram(ctx context.Context, sku string) (dominio.Medida, error)
+	Alcance(ctx context.Context, sku string) (dominio.Medida, error)
+}
+
+// SQLDoGrafo: a MESMA pergunta respondida no PostgreSQL (self-joins).
+type SQLDoGrafo interface {
+	TambemCompraram(ctx context.Context, sku string) (dominio.Medida, error)
+	Alcance(ctx context.Context, sku string) (dominio.Medida, error)
+	SkusParaOGrafo(ctx context.Context) ([]dominio.SkuParaOGrafo, error)
+}

@@ -27,14 +27,18 @@ import (
 	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
+	labcassandra "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/cassandra"
 	labcatalogo "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/catalogo"
 	labha "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/ha"
 	labhttp "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/http"
 	labloja "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/loja"
+	labneo4j "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/neo4j"
 	labpg "github.com/nosqlgo/marketplace/internal/laboratorio/adaptadores/postgres"
 	labapp "github.com/nosqlgo/marketplace/internal/laboratorio/aplicacao"
+	lojacassandra "github.com/nosqlgo/marketplace/internal/loja/adaptadores/cassandra"
 	lojahttp "github.com/nosqlgo/marketplace/internal/loja/adaptadores/http"
 	lojamongo "github.com/nosqlgo/marketplace/internal/loja/adaptadores/mongo"
+	lojaneo4j "github.com/nosqlgo/marketplace/internal/loja/adaptadores/neo4j"
 	lojapg "github.com/nosqlgo/marketplace/internal/loja/adaptadores/postgres"
 	lojaredis "github.com/nosqlgo/marketplace/internal/loja/adaptadores/redis"
 	"github.com/nosqlgo/marketplace/internal/loja/adaptadores/senha"
@@ -65,8 +69,10 @@ type Conexoes struct {
 	MongoDB   string
 	Redis     *redis.Client
 	Cassandra *storage.Cassandra // opcional: hosts vazios = desabilitado
-	Neo4j     neo4j.Driver       // opcional
-	Neo4jErr  error              // storage.ErrDisabled quando não configurado
+	// Keyspace da loja no Cassandra (padrão "marketplace"; os testes usam um por teste).
+	CassandraKeyspace string
+	Neo4j             neo4j.Driver // opcional
+	Neo4jErr          error        // storage.ErrDisabled quando não configurado
 }
 
 type ConfigHA struct {
@@ -80,6 +86,9 @@ type Opcoes struct {
 	CORSOrigins []string
 	// Intervalo do REFRESH da materialized view dos relatórios; 0 = não agenda.
 	AtualizarRelatorios time.Duration
+	// AquecerGrafo: na subida, prepara o Neo4j em segundo plano (só a API;
+	// os testes não precisam e não ganham uma goroutine a mais).
+	AquecerGrafo bool
 	// Requisições por minuto por IP nas rotas que escrevem; 0 = sem limite.
 	LimitePorMinuto int
 	// Chave do CPF cifrado (Fase 6). Obrigatória.
@@ -94,6 +103,9 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 	}
 	if c.Cassandra == nil {
 		c.Cassandra = storage.NewCassandra(nil)
+	}
+	if c.CassandraKeyspace == "" {
+		c.CassandraKeyspace = "marketplace"
 	}
 	if c.Neo4j == nil && c.Neo4jErr == nil {
 		c.Neo4jErr = storage.ErrDisabled
@@ -114,20 +126,30 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 	pedidos := lojapg.NovosPedidos(c.Postgres)
 	ofertas := lojapg.NovasOfertas(c.Postgres)
 	checkout := lojaapp.NovoCheckout(pedidos)
+	// Fase 7: a loja compra com o checkout que alimenta o grafo (Neo4j) depois
+	// do COMMIT; o Laboratório de Concorrência, com o sem grafo (lá embaixo).
+	grafo := lojaneo4j.NovoGrafo(c.Neo4j, c.Neo4jErr)
+	if op.AquecerGrafo {
+		go grafo.Aquecer(ctx)
+	}
+	vistos := lojacassandra.NovosVistos(c.Cassandra, c.CassandraKeyspace)
+	checkoutDaLoja := checkout.ComGrafo(grafo)
 	relatorios := lojaapp.NovosRelatorios(lojapg.NovosRelatorios(c.Postgres, c.PostgresReplica))
 	if op.AtualizarRelatorios > 0 {
 		relatorios.AtualizarPeriodicamente(ctx, op.AtualizarRelatorios)
 	}
 	catalogo := lojamongo.NovoCatalogo(c.Mongo, c.MongoDB)
 	loja := lojahttp.NovosHandlers(
-		checkout,
-		lojaapp.NovoCarrinho(lojaredis.NovosCarrinhos(c.Redis), ofertas, pedidos, lojaredis.NovosEfeitos(c.Redis), checkout),
+		checkoutDaLoja,
+		lojaapp.NovoCarrinho(lojaredis.NovosCarrinhos(c.Redis), ofertas, pedidos, lojaredis.NovosEfeitos(c.Redis), checkoutDaLoja),
 		lojaapp.NovoCatalogo(catalogo, lojaredis.NovoCache(c.Redis), ofertas,
 			lojapg.NovosClientes(c.Postgres), lojaredis.NovoRanking(c.Redis)),
 		lojaapp.NovaVitrine(lojapg.NovaVitrine(c.Postgres)),
 		relatorios,
 		lojaapp.NovasContas(lojapg.NovasContas(c.Postgres, op.ChaveCPF), senha.Novo(), lojaredis.NovasSessoes(c.Redis),
-			lojapg.NovosMeusPedidos(c.Postgres), catalogo, lojaredis.NovoCache(c.Redis)),
+			lojapg.NovosMeusPedidos(c.Postgres), catalogo, lojaredis.NovoCache(c.Redis), vistos),
+		lojaapp.NovoHistorico(vistos),
+		lojaapp.NovasRecomendacoes(grafo, catalogo, lojapg.NovoHistoricoDeCompras(c.Postgres)),
 	)
 
 	// ---------------------------------------------------------- painel do DBA
@@ -151,6 +173,8 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 			labha.NovoPatroni(c.HA.PostgresURL, c.HA.PatroniURLs),
 			labha.NovoMongoRS(c.HA.MongoURI),
 			labha.NovoSentinel(c.HA.RedisSentinels)),
+		Consistencia: labapp.NovaConsistencia(labcassandra.NovaConsistencia(c.Cassandra)),
+		GrafoXSQL:    labapp.NovoGrafoXSQL(labneo4j.NovoGrafo(c.Neo4j, c.Neo4jErr), labpg.NovoGrafoSQL(c.Postgres)),
 	})
 
 	// ---------------------------------------------------------- rotas
@@ -185,7 +209,6 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 		loja.Rotas(r, limitar)
 		painel.Rotas(r)
 		lab.Rotas(r)
-		// Próximas fases (README): /events (Fase 7, Cassandra) e /recommend (Fase 7, Neo4j).
 	})
 	return r, nil
 }

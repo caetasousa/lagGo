@@ -66,7 +66,7 @@ func run() error {
 	}
 	defer rdb.Close()
 
-	// Bancos opcionais (--profile nosql): conectam sob demanda.
+	// Cassandra e Neo4j (Fase 7): conectam sob demanda — a API sobe sem eles.
 	cass := storage.NewCassandra(cfg.CassandraHosts)
 	defer cass.Close()
 	neo, neoErr := storage.NewNeo4j(cfg.Neo4jURI, cfg.Neo4jUser, cfg.Neo4jPassword)
@@ -77,11 +77,12 @@ func run() error {
 	router, err := app.Montar(ctx, app.Conexoes{
 		Postgres: pg, PostgresReplica: replica, Mongo: mongoClient, MongoDB: cfg.MongoDatabase, Redis: rdb,
 		PostgresURL: cfg.PostgresURL, PgBouncerURL: cfg.PgBouncerURL, PgBouncerAdminURL: cfg.PgBouncerAdminURL,
-		Cassandra: cass, Neo4j: neo, Neo4jErr: neoErr,
+		Cassandra: cass, CassandraKeyspace: cfg.CassandraKeyspace, Neo4j: neo, Neo4jErr: neoErr,
 		HA: app.ConfigHA{PostgresURL: cfg.HAPostgresURL, PatroniURLs: cfg.HAPatroniURLs, MongoURI: cfg.HAMongoURI, RedisSentinels: cfg.HARedisSentinels},
 	}, app.Opcoes{
 		CORSOrigins:         cfg.CORSOrigins,
 		AtualizarRelatorios: 10 * time.Minute,
+		AquecerGrafo:        true,
 		LimitePorMinuto:     cfg.RateLimitPorMinuto,
 		ChaveCPF:            cfg.ChaveCPF,
 	})

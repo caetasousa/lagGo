@@ -25,11 +25,16 @@ type Handlers struct {
 	vitrine    *aplicacao.Vitrine
 	relatorios *aplicacao.Relatorios
 	contas     *aplicacao.Contas
+	// Fase 7
+	historico     *aplicacao.Historico
+	recomendacoes *aplicacao.Recomendacoes
 }
 
 func NovosHandlers(checkout *aplicacao.Checkout, carrinho *aplicacao.Carrinho, catalogo *aplicacao.Catalogo,
-	vitrine *aplicacao.Vitrine, relatorios *aplicacao.Relatorios, contas *aplicacao.Contas) *Handlers {
-	return &Handlers{checkout: checkout, carrinho: carrinho, catalogo: catalogo, vitrine: vitrine, relatorios: relatorios, contas: contas}
+	vitrine *aplicacao.Vitrine, relatorios *aplicacao.Relatorios, contas *aplicacao.Contas,
+	historico *aplicacao.Historico, recomendacoes *aplicacao.Recomendacoes) *Handlers {
+	return &Handlers{checkout: checkout, carrinho: carrinho, catalogo: catalogo, vitrine: vitrine, relatorios: relatorios,
+		contas: contas, historico: historico, recomendacoes: recomendacoes}
 }
 
 // Rotas registra as rotas da loja (debaixo de /api).
@@ -50,6 +55,7 @@ func (h *Handlers) Rotas(r chi.Router, limite func(nome string) func(http.Handle
 		r.Delete("/conta", h.ExcluirConta)
 		r.Get("/conta/pedidos", h.MeusPedidos)
 		r.Get("/conta/pedidos/{id}", h.MeuPedido)
+		r.Get("/conta/vistos", h.Vistos)
 	})
 
 	// Relatórios (Fase 2; da réplica desde a Fase 5)
@@ -61,7 +67,12 @@ func (h *Handlers) Rotas(r chi.Router, limite func(nome string) func(http.Handle
 
 	// Catálogo (Fase 3, MongoDB + cache no Redis)
 	r.Get("/catalogo/produtos", h.Buscar)
-	r.Get("/catalogo/produtos/{id}", h.Detalhe)
+	r.With(h.talvezAutenticado).Get("/catalogo/produtos/{id}", h.Detalhe)
+	r.Get("/catalogo/produtos/{id}/recomendacoes", h.Recomendacoes)
+
+	// Recomendações (Fase 7, Neo4j): o grafo é derivado dos pedidos.
+	r.Get("/recomendacoes/grafo", h.EstadoDoGrafo)
+	r.With(limite("reconstruir")).Post("/recomendacoes/grafo/reconstruir", h.ReconstruirGrafo)
 	r.With(limite("avaliacoes"), h.autenticado).Post("/catalogo/produtos/{id}/avaliacoes", h.Avaliar)
 	r.Get("/catalogo/mais-vendidos", h.MaisVendidos)
 

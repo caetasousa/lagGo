@@ -149,6 +149,12 @@ func (h *Handlers) Detalhe(w http.ResponseWriter, r *http.Request) {
 		erro(w, err)
 		return
 	}
+	// Fase 7: quem está logado deixa um evento "visualizou" no Cassandra.
+	// Login aqui é opcional (talvezAutenticado) e o evento nunca derruba a
+	// página (cenário X4).
+	if c, ok := contaOpcional(r); ok {
+		h.historico.Registrar(r.Context(), c, d.Produto.ID, d.Produto.Nome)
+	}
 	w.Header().Set("X-Cache", d.Cache)
 	httpx.JSON(w, http.StatusOK, d)
 }

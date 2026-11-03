@@ -148,3 +148,33 @@ type Relatorios interface {
 	// próxima leitura já o veja (read-your-writes): devolve o status relido.
 	Atualizar(ctx context.Context) ([]dominio.Atualizacao, dominio.Origem, error)
 }
+
+// ------------------------------------------------------------ Fase 7
+
+// Vistos: "vistos recentemente" (Cassandra). Eventos com TTL, uma partição
+// por cliente, do mais novo para o mais antigo.
+type Vistos interface {
+	Registrar(ctx context.Context, cliente uuid.UUID, v dominio.Visto, retencao time.Duration) error
+	// Recentes devolve os últimos eventos (com repetição), o mais novo primeiro.
+	Recentes(ctx context.Context, cliente uuid.UUID, limite int) ([]dominio.Visto, error)
+	// Apagar remove todo o histórico do cliente ("excluir minha conta", X5).
+	Apagar(ctx context.Context, cliente uuid.UUID) error
+}
+
+// Grafo: (Cliente)-[:COMPROU]->(Sku) no Neo4j. É dado DERIVADO dos pedidos do
+// PostgreSQL: pode ser apagado e reconstruído a qualquer momento.
+type Grafo interface {
+	// Registrar soma as compras ao grafo (MERGE: repetir não duplica).
+	Registrar(ctx context.Context, compras []dominio.Compra) error
+	// TambemCompraram: outros SKUs comprados por quem comprou algum dos skus,
+	// com a força (clientes distintos), da maior para a menor.
+	TambemCompraram(ctx context.Context, skus []string, limite int) ([]dominio.Coocorrencia, error)
+	Limpar(ctx context.Context) error
+	Estado(ctx context.Context) (dominio.EstadoDoGrafo, error)
+}
+
+// HistoricoDeCompras: a fonte do grafo (PostgreSQL) — percorre as compras
+// agregadas por (cliente, sku) em lotes.
+type HistoricoDeCompras interface {
+	Percorrer(ctx context.Context, lote int, f func([]dominio.Compra) error) (int64, error)
+}

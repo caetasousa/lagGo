@@ -41,6 +41,24 @@ func (h *Handlers) autenticado(next http.Handler) http.Handler {
 	})
 }
 
+// talvezAutenticado: login OPCIONAL — com sessão válida, a conta vai para o
+// contexto; sem ela, a requisição segue como anônima.
+func (h *Handlers) talvezAutenticado(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if t := tokenDe(r); t != "" {
+			if c, err := h.contas.Autenticar(r.Context(), t); err == nil {
+				r = r.WithContext(context.WithValue(r.Context(), chaveConta{}, c))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func contaOpcional(r *http.Request) (dominio.Conta, bool) {
+	c, ok := r.Context().Value(chaveConta{}).(dominio.Conta)
+	return c, ok
+}
+
 func tokenDe(r *http.Request) string {
 	if c, err := r.Cookie(cookieSessao); err == nil {
 		return c.Value

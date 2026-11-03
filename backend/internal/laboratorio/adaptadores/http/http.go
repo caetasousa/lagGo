@@ -27,6 +27,9 @@ type Labs struct {
 	Indices    *aplicacao.Indices
 	Cache      *aplicacao.Cache
 	HA         *aplicacao.HA
+	// Fase 7
+	Consistencia *aplicacao.Consistencia
+	GrafoXSQL    *aplicacao.GrafoXSQL
 }
 
 type Handlers struct{ l Labs }
@@ -60,6 +63,33 @@ func (h *Handlers) Rotas(r chi.Router) {
 		httpx.JSON(w, http.StatusOK, map[string]any{"clusters": h.l.HA.Estado(r.Context()), "ensaio": h.l.HA.Ensaio()})
 	})
 	r.Post("/lab/ha", h.IniciarHA)
+
+	// Fase 7: Cassandra (consistência ajustável) e Neo4j × PostgreSQL.
+	r.Post("/lab/consistencia", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			RF int `json:"rf"`
+		}
+		if !decodificar(w, r, &b) {
+			return
+		}
+		v, err := h.l.Consistencia.Rodar(r.Context(), b.RF)
+		escrever(w, http.StatusOK, v, err)
+	})
+	r.Get("/lab/grafo/skus", func(w http.ResponseWriter, r *http.Request) {
+		v, err := h.l.GrafoXSQL.Skus(r.Context())
+		escrever(w, http.StatusOK, v, err)
+	})
+	r.Post("/lab/grafo", func(w http.ResponseWriter, r *http.Request) {
+		var b struct {
+			Pergunta string `json:"pergunta"`
+			Sku      string `json:"sku_id"`
+		}
+		if !decodificar(w, r, &b) {
+			return
+		}
+		v, err := h.l.GrafoXSQL.Rodar(r.Context(), b.Pergunta, b.Sku)
+		escrever(w, http.StatusOK, v, err)
+	})
 
 	// Laboratório de Índices (Fases 2 e 4, docs/04)
 	r.Get("/dba/indices/experimentos", func(w http.ResponseWriter, r *http.Request) {

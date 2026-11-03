@@ -27,11 +27,12 @@ type Contas struct {
 	meusPedidos portas.MeusPedidos
 	catalogo    portas.Catalogo
 	cache       portas.CacheDeProdutos
+	vistos      portas.Vistos
 }
 
 func NovasContas(contas portas.Contas, senhas portas.Senhas, sessoes portas.Sessoes,
-	meusPedidos portas.MeusPedidos, catalogo portas.Catalogo, cache portas.CacheDeProdutos) *Contas {
-	return &Contas{contas: contas, senhas: senhas, sessoes: sessoes, meusPedidos: meusPedidos, catalogo: catalogo, cache: cache}
+	meusPedidos portas.MeusPedidos, catalogo portas.Catalogo, cache portas.CacheDeProdutos, vistos portas.Vistos) *Contas {
+	return &Contas{contas: contas, senhas: senhas, sessoes: sessoes, meusPedidos: meusPedidos, catalogo: catalogo, cache: cache, vistos: vistos}
 }
 
 // Cadastrar valida, grava (com a senha já em hash) e abre a sessão.
@@ -123,8 +124,9 @@ func (a *Contas) MeuPedido(ctx context.Context, c dominio.Conta, pedido uuid.UUI
 // Esquecer: "excluir minha conta" (LGPD, art. 18). A ordem falha do lado
 // seguro: primeiro o PostgreSQL (dados pessoais e credencial — sem
 // credencial, ninguém entra mais), depois as sessões no Redis e o nome nas
-// avaliações do MongoDB (e no cache do produto). Não há transação entre bancos; se um dos dois
-// últimos falhar, repetir é seguro: os três passos são idempotentes (o
+// avaliações do MongoDB (e no cache do produto) e, por fim, o histórico de
+// navegação no Cassandra (Fase 7). Não há transação entre bancos; se um dos
+// últimos passos falhar, repetir é seguro: todos são idempotentes (o
 // primeiro, já feito, devolve ErrNaoAutenticado e é ignorado).
 func (a *Contas) Esquecer(ctx context.Context, c dominio.Conta) error {
 	if err := a.contas.Esquecer(ctx, c.ClienteID); err != nil && !errors.Is(err, dominio.ErrNaoAutenticado) {
@@ -145,5 +147,7 @@ func (a *Contas) Esquecer(ctx context.Context, c dominio.Conta) error {
 			return err
 		}
 	}
-	return nil
+	// O TTL apagaria o histórico em 30 dias; a exclusão é agora (X5). O nó do
+	// cliente no grafo (Neo4j) fica: só tem o id, como os pedidos que ficam.
+	return a.vistos.Apagar(ctx, c.ClienteID)
 }
