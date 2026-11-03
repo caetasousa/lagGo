@@ -133,10 +133,12 @@ Medido em repouso (sem carga), em 2026-11-01:
 |---|---|
 | PostgreSQL + Redis + API + nginx | ~70 MB |
 | MongoDB | ~330 MB |
-| Cassandra | ~600 MB (heap limitado a 1 GB no compose) |
-| Neo4j | ~280 MB (heap limitado a 512 MB) |
+| Cassandra | ~300 MB (heap limitado a 384 MB no compose) |
+| Neo4j | ~580 MB com o grafo carregado (heap de 256 MB + page cache de 96 MB) |
 
 Sob carga (seed de milhões de linhas, `pgbench`) o consumo sobe. Reserve
-**2 GB** para `make up` e **4 GB** para `make up-nosql`.
+**3 GB** para `make up` (Cassandra e Neo4j fazem parte do núcleo desde a
+Fase 7) e mais ~600 MB para o perfil `ha`. Números medidos em
+[fase-7.md](fases/fase-7.md#3-resultados-medidos).
 
 No WSL2, ajuste o limite de memória em `%UserProfile%\.wslconfig` (`memory=8GB`) se precisar.

@@ -39,9 +39,8 @@ Compose.
 - **Material de estudo** (`/estudo`): os documentos de `docs/` renderizados no app,
   com tabelas, diagramas Mermaid, links entre documentos e as fontes para pesquisa —
   o app lê os próprios arquivos `.md`, não uma cópia.
-- **10 laboratórios**, agrupados pelo serviço do `docker-compose.yml` de que dependem
-  (`postgres`, `postgres-replica`, `pgbouncer`, `mongo`, `redis` e os clusters do perfil `ha`;
-  `cassandra` e `neo4j` nas próximas fases):
+- **12 laboratórios**, agrupados pelo serviço do `docker-compose.yml` de que dependem
+  (`postgres`, `postgres-replica`, `pgbouncer`, `mongo`, `redis`, `cassandra`, `neo4j` e os clusters do perfil `ha`):
   | Laboratório | O que mostra |
   |---|---|
   | Concorrência | 50 compradores disputando o último item; o *lost update* |
@@ -54,6 +53,8 @@ Compose.
   | Replicação | cada `synchronous_commit`: o custo do COMMIT e se a linha já está na réplica |
   | Backup e PITR | full/diff/incr com pgBackRest; recuperar um `DROP TABLE` até o instante anterior |
   | Alta disponibilidade | derrubar o líder de Patroni, MongoDB (replica set) e Redis (Sentinel): RTO e RPO medidos |
+  | Consistência ajustável | Cassandra: `ONE`, `QUORUM` e `ALL` com RF=1 e RF=3; a regra R + W > RF |
+  | Grafo × SQL | a mesma recomendação em Cypher (Neo4j) e em SQL (self-join no PostgreSQL): tempo e resposta lado a lado |
 - **Painel do DBA** em abas: saúde dos bancos, gráficos ao vivo, tabelas
   (tamanho, tuplas mortas, autovacuum), índices nunca usados, `shared_buffers`,
   consultas, locks, Redis, MongoDB, PgBouncer, auditoria e manutenção.
@@ -68,9 +69,9 @@ Compose.
 | 🍃 | **MongoDB 9** | catálogo: atributos por categoria, avaliações, `$jsonSchema` | [07](docs/07-nosql.md#mongodb--documentos) |
 | 🟥 | **Redis 8** | carrinho, cache-aside, rate limit, ranking, stream de pedidos | [07](docs/07-nosql.md#redis--chave-valor) |
 | 🔀 | **PgBouncer 1.26** | pooler em modo transaction (Laboratório de Conexões, `make pgbench`) | [06](docs/06-postgresql-admin.md#5-pool-de-conexões-pgbouncer-fase-4) |
-| 👁️ | **Cassandra 5** | eventos de navegação (Fase 7; não sobe antes) | [07](docs/07-nosql.md#cassandra--wide-column) |
-| 🕸️ | **Neo4j 2026** | recomendações (Fase 7; não sobe antes) | [07](docs/07-nosql.md#neo4j--grafos) |
-| 🐹 | **Go 1.27** | API (chi, pgx, sqlc, goose, mongo-driver, go-redis) | [11](docs/11-stack-go-react-docker.md) |
+| 👁️ | **Cassandra 5** | "vistos recentemente" (eventos com TTL), Laboratório de Consistência | [07](docs/07-nosql.md#cassandra--wide-column) |
+| 🕸️ | **Neo4j 2026** | "quem comprou também comprou", Laboratório Grafo × SQL | [07](docs/07-nosql.md#neo4j--grafos) |
+| 🐹 | **Go 1.27** | API (chi, pgx, sqlc, goose, mongo-driver, go-redis, gocql, neo4j-go-driver) | [11](docs/11-stack-go-react-docker.md) |
 | ⚛️ | **React 19 · Vite 8 · TypeScript 7 · Recharts** | SPA servida pelo nginx; gráficos do painel | [11](docs/11-stack-go-react-docker.md) |
 | 🧪 | **Testcontainers · Playwright** | integração com bancos efêmeros; E2E num stack isolado | [11](docs/11-stack-go-react-docker.md#testes) |
 | 🪞 | **Réplica PostgreSQL** | streaming replication; os relatórios leem dela | [08](docs/08-replicacao-backup.md#31-réplica-por-streaming) |
@@ -90,13 +91,13 @@ flowchart LR
     L["🧪 Lab de Conexões<br/>pgbench"] -- "pool" --> B["🔀 PgBouncer"] --> PG
     A -- "documentos" --> MG[("🍃 MongoDB<br/>catálogo")]
     A -- "chave-valor" --> RD[("🟥 Redis<br/>carrinho · cache")]
-    A -. "Fase 7" .-> CS[("👁️ Cassandra")]
-    A -. "Fase 7" .-> N4[("🕸️ Neo4j")]
+    A -- "eventos com TTL" --> CS[("👁️ Cassandra<br/>vistos recentemente")]
+    A -- "grafo" --> N4[("🕸️ Neo4j<br/>recomendações")]
 ```
 
 Preço e estoque **vivem só no PostgreSQL**; o MongoDB e o Redis guardam cópias
-para leitura rápida. Não há transação entre bancos: o Redis só é atualizado
-depois do COMMIT. Detalhes em [docs/00-arquitetura.md](docs/00-arquitetura.md).
+para leitura rápida. Não há transação entre bancos: o Redis e o grafo do Neo4j
+só são atualizados depois do COMMIT. Detalhes em [docs/00-arquitetura.md](docs/00-arquitetura.md).
 
 ---
 
@@ -106,14 +107,14 @@ Pré-requisito: **Docker** com Compose v2. Para desenvolver fora do Docker:
 Go 1.27+ e Node 24+.
 
 ```bash
-make up      # núcleo: postgres, mongo, redis, api, web → http://localhost:3000
-make seed    # dados de estudo: 100 mil pedidos, ~1000 produtos, 7 mil avaliações (~10 s)
+make up      # núcleo: postgres, mongo, redis, cassandra, neo4j, api, web → http://localhost:3000
+make seed    # dados de estudo: 100 mil pedidos, ~1000 produtos, 7 mil avaliações e o grafo de compras
 ```
 
 | | Comando | O que faz |
 |---|---|---|
 | 🐳 | `make up` / `make down` | stack de desenvolvimento (só o núcleo) |
-| 🌱 | `make seed` | **apaga** e recria os dados (PostgreSQL, catálogo, Redis) |
+| 🌱 | `make seed` | **apaga** e recria os dados (PostgreSQL, catálogo, Redis, grafo do Neo4j) |
 | ⚡ | `make check` | build, vet, testes unitários, build do frontend — sem Docker |
 | 🐘 | `make check-db` | integração com bancos efêmeros — **exige Docker** |
 | 🧭 | `make e2e` | o app inteiro pelo navegador, num stack isolado — **exige Docker** |
@@ -121,7 +122,6 @@ make seed    # dados de estudo: 100 mil pedidos, ~1000 produtos, 7 mil avaliaç�
 | 📈 | `make pgbench` | benchmark: conexão nova × PgBouncer × conexões mantidas |
 | 🧰 | `make up-tools` | + pgAdmin e RedisInsight |
 | ♻️ | `make up-ha` | + clusters de alta disponibilidade (Patroni/etcd/HAProxy, Mongo `rsha`, Redis Sentinel; ~600 MB) |
-| 🕸️ | `make up-nosql` | + Cassandra e Neo4j (só a partir da Fase 7; +1–2 GB de RAM) |
 | ❓ | `make` | lista todos os alvos (psql, mongosh, redis-cli, sqlc, migration…) |
 
 ### Portas
@@ -135,7 +135,8 @@ make seed    # dados de estudo: 100 mil pedidos, ~1000 produtos, 7 mil avaliaç�
 | MongoDB | `27017` | `27117` | sem autenticação (pendente: fase-6 §7); `?directConnection=true` do host |
 | Redis | `6379` | `26379` | sem senha (pendente: fase-6 §7) |
 | PgBouncer | `6432` | `26432` | `marketplace` / `marketplace`; console: banco `pgbouncer` |
-| Neo4j Browser | `7474` | — | `neo4j` / `marketplace123` |
+| Cassandra | `9042` | `29042` | sem autenticação; `make cqlsh` |
+| Neo4j Browser / Bolt | `7474` / `7687` | `27474` / `27687` | `neo4j` / `marketplace123`; `make cypher` |
 | pgAdmin / RedisInsight | `5050` / `5540` | — | perfil `tools` |
 | HAProxy (estatísticas) | `7000` | `27000` | perfil `ha`; os clusters de HA só são acessados de dentro da rede do compose |
 
@@ -161,14 +162,14 @@ make frontend-dev     # React em http://localhost:5173 (proxy de /api → :8080)
 | | Nível | Onde | Bancos |
 |---|---|---|---|
 | ⚡ | unitário | `go test ./...`, build do front | nenhum |
-| 🐘 | integração | `-tags=integration`, `internal/app` (servidor inteiro por HTTP), `loja/aplicacao`, `laboratorio/aplicacao`, `painel/aplicacao`, `plataforma/storage` | PostgreSQL, MongoDB e Redis **efêmeros** (Testcontainers) |
+| 🐘 | integração | `-tags=integration`, `internal/app` (servidor inteiro por HTTP), `loja/aplicacao`, `laboratorio/aplicacao`, `painel/aplicacao`, `plataforma/storage` | PostgreSQL, MongoDB e Redis **efêmeros** (Testcontainers); Cassandra e Neo4j só nos testes da Fase 7 |
 | 🧭 | E2E | `e2e/testes/` (Playwright na imagem oficial) | stack `nosqlgo-e2e` com o núcleo, semeado do zero |
 
 Antes do código vem o **cenário de falha**: [`e2e/CENARIOS.md`](e2e/CENARIOS.md)
 lista como cada funcionalidade pode quebrar, e cada teste cita o id que cobre.
 O relatório de cada execução (resultado por cenário, print de cada tela,
 imagens usadas) fica em `e2e/relatorio/resumo.md`. Nenhum teste toca no banco
-de desenvolvimento, e Cassandra e Neo4j não sobem antes da Fase 7. As regras
+de desenvolvimento. As regras
 completas estão no [`CLAUDE.md`](CLAUDE.md).
 
 ---
@@ -191,6 +192,9 @@ os **exercícios para você**, ou seja, o que o código não faz por você.
 | 2 | [docs/fases/fase-2.md](docs/fases/fase-2.md) |
 | 3 | [docs/fases/fase-3.md](docs/fases/fase-3.md) |
 | 4 | [docs/fases/fase-4.md](docs/fases/fase-4.md) |
+| 5 | [docs/fases/fase-5.md](docs/fases/fase-5.md) |
+| 6 | [docs/fases/fase-6.md](docs/fases/fase-6.md) |
+| 7 | [docs/fases/fase-7.md](docs/fases/fase-7.md) |
 
 ### Fase 0 — Esqueleto ✅
 - [x] Docker Compose com perfis (`nosql`, `tools`)
@@ -268,12 +272,15 @@ os **exercícios para você**, ou seja, o que o código não faz por você.
 - [ ] API sem superusuário, TLS no Postgres, ACL no Redis e autenticação no Mongo da loja, Docker secrets ([fase-6.md §7](docs/fases/fase-6.md#7-observações-para-as-próximas-fases))
 - [ ] Exercícios do estudante ([fase-6.md §6](docs/fases/fase-6.md#6-exercícios-para-você))
 
-### Fase 7 — Wide-column e grafo · *8.8*
-- [ ] Eventos de navegação no Cassandra ("vistos recentemente") com TTL
-- [ ] Explorar consistência ajustável (`ONE`, `QUORUM`, `ALL`)
-- [ ] Neo4j: grafo Cliente–COMPROU→Produto alimentado pelos pedidos
-- [ ] Recomendações com Cypher; comparar com a mesma consulta em SQL recursivo
-- [ ] Tabela comparativa final: CAP/PACELC, consistência e casos de uso de cada banco
+### Fase 7 — Wide-column e grafo · *8.8* ✅
+- [x] 7.1 Cassandra e Neo4j no núcleo, com memória reduzida; esquemas garantidos pela API (sem `init.cql`)
+- [x] 7.2 "Vistos recentemente" no Cassandra: uma partição por cliente, TTL de 30 dias; apagado ao excluir a conta
+- [x] 7.3 **Laboratório de Consistência**: `ONE`, `QUORUM` e `ALL` com RF=1 e RF=3 (R + W > RF)
+- [x] 7.4 Neo4j: grafo Cliente–COMPROU→Sku alimentado depois do COMMIT e reconstruído dos pedidos
+- [x] 7.5 "Quem comprou também comprou" na página do produto (Cypher, dois saltos)
+- [x] 7.6 **Laboratório Grafo × SQL**: a mesma pergunta nos dois bancos, tempo e resposta lado a lado
+- [x] 7.7 Quadro comparativo final: modelo, consistência, PACELC e casos de uso ([docs/07 §4](docs/07-nosql.md#4-quadro-comparativo-final))
+- [ ] Exercícios do estudante ([fase-7.md §6](docs/fases/fase-7.md#6-exercícios-para-você))
 
 ## 📁 Estrutura de pastas
 
@@ -281,7 +288,7 @@ os **exercícios para você**, ou seja, o que o código não faz por você.
 nosqlGo/
 ├── README.md                  ← você está aqui
 ├── CLAUDE.md                  ← regras do projeto (testes, bancos, documentação)
-├── docker-compose.yml         ← todos os serviços (perfis nosql/tools)
+├── docker-compose.yml         ← todos os serviços (perfis ha/tools)
 ├── Makefile                   ← atalhos (make help)
 ├── e2e/                       ← Playwright: CENARIOS.md, testes/, rodar.sh, relatório
 ├── docs/                      ← material de estudo, um arquivo por tópico
@@ -306,21 +313,19 @@ nosqlGo/
 │       │   ├── dominio/       ← Pedido, Carrinho, Produto… e as regras (sem banco, sem HTTP)
 │       │   ├── portas/        ← interfaces do que os casos de uso pedem aos bancos
 │       │   ├── aplicacao/     ← casos de uso: Checkout.Finalizar (com nova tentativa), Carrinho, Catalogo (cache-aside)
-│       │   └── adaptadores/   ← postgres (sqlc) · mongo (pipelines, $jsonSchema, seed) · redis (chaves) · http (rotas)
-│       ├── laboratorio/       ← os 10 laboratórios (concorrência, isolamento, MVCC, índices, cache, replicação, backup, HA…)
-│       │   └── adaptadores/   ← postgres · catalogo e loja (pontes para a loja) · ha (Patroni, Mongo rsha, Sentinel) · http
+│       │   └── adaptadores/   ← postgres (sqlc) · mongo (pipelines, $jsonSchema, seed) · redis (chaves) · cassandra (vistos) · neo4j (grafo) · http (rotas)
+│       ├── laboratorio/       ← os 12 laboratórios (concorrência, isolamento, MVCC, índices, cache, replicação, backup, HA, consistência, grafo…)
+│       │   └── adaptadores/   ← postgres · catalogo e loja (pontes para a loja) · ha (Patroni, Mongo rsha, Sentinel) · cassandra · neo4j · http
 │       ├── painel/            ← Painel do DBA: visão geral, locks, saúde, manutenção, auditoria, réplica, Redis, Mongo, PgBouncer
 │       ├── plataforma/        ← o que é de todos: config, storage (conexões e migrações), health, httpx, limite, testinfra
 │       ├── sqlcdb/            ← código GERADO pelo sqlc (não editar)
-│       ├── app/               ← a raiz de composição: liga tudo (API e testes usam a mesma) + teste da regra de dependência
-│       ├── events/            ← (Fase 7) Cassandra
-│       └── recommend/         ← (Fase 7) Neo4j
+│       └── app/               ← a raiz de composição: liga tudo (API e testes usam a mesma) + teste da regra de dependência
 └── frontend/
     └── src/
         ├── api/client.ts      ← chamadas e tipos da API
         ├── components/ui.tsx  ← selo de banco, explicação em duas camadas, conclusão
         ├── pages/loja/        ← início, catálogo, produto, carrinho, meus pedidos
-        ├── pages/labs/        ← os 10 laboratórios e o hub
+        ├── pages/labs/        ← os 12 laboratórios e o hub
         ├── pages/RelatoriosPage.tsx
         └── pages/dba/         ← Painel do DBA (abas)
 ```

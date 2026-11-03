@@ -120,7 +120,7 @@ Conceitos:
 | **Anonimização x pseudonimização** | Anonimizado sai do escopo da LGPD; pseudonimizado (ex.: hash do CPF) continua dentro |
 | **Segurança** (art. 46) | Seções 2–5 deste documento |
 | **Registro das operações** (art. 37) | Trigger de auditoria (docs/05) |
-| **Retenção** | TTL no Cassandra (90 dias, já em [`init.cql`](../infra/cassandra/init.cql)), TTL no Redis, rotina de expurgo no PG |
+| **Retenção** | TTL no Cassandra (30 dias no histórico de navegação, Fase 7), TTL no Redis, rotina de expurgo no PG |
 | **Incidentes** (art. 48) | Comunicar a ANPD e os titulares |
 
 **Exercício da Fase 6:** implementar o "direito ao esquecimento" e descobrir
@@ -143,7 +143,7 @@ O cadastro e o login usam os três bancos, cada um no que faz melhor:
 | RLS em `pedido`, `item_pedido`, `pagamento` (papel `loja_cliente`) | migração 00008 + [`adaptadores/postgres/contas.go`](../backend/internal/loja/adaptadores/postgres/contas.go) | "só os seus pedidos" garantido pelo banco, mesmo se um `WHERE` sumir |
 | Relatórios com o papel `relatorio_leitura` (só `SELECT`) | [`adaptadores/postgres/relatorios.go`](../backend/internal/loja/adaptadores/postgres/relatorios.go) | um relatório com bug não consegue escrever |
 | CPF: `pgp_sym_encrypt` + `hmac` (UNIQUE) + 2 dígitos em claro | migração 00008, [`db/queries/conta.sql`](../backend/db/queries/conta.sql) | ilegível num dump; "CPF já tem conta?" sem decifrar ninguém; a tela mascara sem a chave |
-| "Excluir minha conta": procedure `conta.esquecer_cliente` | migração 00008 + `Contas.Esquecer` | anonimiza numa transação; depois apaga as sessões, o nome nas avaliações (MongoDB) e a cópia do produto no cache |
+| "Excluir minha conta": procedure `conta.esquecer_cliente` | migração 00008 + `Contas.Esquecer` | anonimiza numa transação; depois apaga as sessões, o nome nas avaliações (MongoDB), a cópia do produto no cache e, desde a Fase 7, o histórico de navegação (Cassandra) |
 
 ### Inventário de dados pessoais (LGPD, art. 37)
 
@@ -157,6 +157,8 @@ O cadastro e o login usam os três bancos, cada um no que faz melhor:
 | sessão | `sessao:*` (Redis) | hash do token; TTL de 7 dias | apagadas |
 | nome nas avaliações | `avaliacoes`, `produtos.avaliacoes_recentes` (MongoDB), `cache:produto:*` (Redis) | só "Nome I." (minimização) | "Cliente removido"; cache apagado |
 | pedidos | `pedido`, `item_pedido`, `pagamento` | RLS | **ficam** (obrigação fiscal, art. 16, I), ligados ao cliente anônimo |
+| produtos abertos (Fase 7) | `vistos_por_cliente` (Cassandra), uma partição por cliente | TTL de 30 dias em cada linha | partição apagada (`DELETE … WHERE cliente_id = ?`) |
+| o que comprou (Fase 7) | nó `Cliente` e arestas `COMPROU` (Neo4j) | só o id do cliente (pseudônimo), nada de nome ou e-mail | **fica**, como os pedidos de onde é derivado (e se reconstrói deles) |
 
 ### O que ainda falta (declarado)
 

@@ -32,6 +32,8 @@ discutida antes.
 | 🐘 | `backend/db/migrations/` | o esquema do PostgreSQL, com as decisões comentadas |
 | 🍃 | `backend/internal/loja/adaptadores/mongo/esquema.go` | coleções, `$jsonSchema` e índices do MongoDB |
 | 🔑 | `backend/internal/loja/adaptadores/redis/redis.go` (constantes `Prefixo*`, `Chave*`) | as chaves do Redis |
+| 👁️ | `backend/internal/loja/adaptadores/cassandra/vistos.go` | keyspace e tabela do Cassandra |
+| 🕸️ | `backend/internal/loja/adaptadores/neo4j/grafo.go` | o grafo do Neo4j (labels, restrições, consultas) |
 | 📌 | `docker-compose.yml`, `go.mod`, `package.json`, Dockerfiles | versões fixadas |
 
 Quando documentação e código divergirem, investigue a implementação e atualize
@@ -52,8 +54,8 @@ contextos em `internal/`, cada um com `dominio/`, `portas/`, `aplicacao/` e
 
 | Contexto | Bancos (adaptadores) | Responsabilidade |
 |---|---|---|
-| `loja` | PostgreSQL, MongoDB, Redis, HTTP | checkout ACID, carrinho, catálogo (cache-aside, avaliações, ranking), vitrine, relatórios (réplica), conta (cadastro, login, sessão, LGPD) |
-| `laboratorio` | PostgreSQL (+ PgBouncer, réplica), catálogo da loja, clusters do perfil `ha` | os laboratórios: concorrência, isolamento, MVCC, expurgo, índices, conexões, cache, replicação, backup e PITR, alta disponibilidade |
+| `loja` | PostgreSQL, MongoDB, Redis, Cassandra, Neo4j, HTTP | checkout ACID, carrinho, catálogo (cache-aside, avaliações, ranking), vitrine, relatórios (réplica), conta (cadastro, login, sessão, LGPD), vistos recentemente, recomendações |
+| `laboratorio` | PostgreSQL (+ PgBouncer, réplica), Cassandra, Neo4j, catálogo da loja, clusters do perfil `ha` | os laboratórios: concorrência, isolamento, MVCC, expurgo, índices, conexões, cache, replicação, backup e PITR, alta disponibilidade, consistência ajustável, grafo × SQL |
 | `painel` | todos (+ PgBouncer) | Painel do DBA: visão geral, locks, saúde, manutenção, auditoria, replicação, Redis, MongoDB |
 | `plataforma` | — | `config`, `storage` (conexões e migrações), `health`, `httpx`, `limite` (rate limit), `testinfra` |
 | `app` | — | **a** raiz de composição: liga adaptadores → casos de uso → rotas (API e testes) |
@@ -95,7 +97,11 @@ Regras:
   Mongo, texto entre os dois (`preco::text`).
 - **Dados derivados se reconstroem da fonte:** `pedido.total` (trigger),
   `relatorio.vendas_por_dia` (refresh), resumo de avaliações (`$merge`),
-  ranking do Redis (seed a partir de `item_pedido`).
+  ranking do Redis (seed a partir de `item_pedido`), grafo do Neo4j
+  (`Recomendacoes.Reconstruir`, a partir de `item_pedido`).
+- **Cassandra e Neo4j são efeitos secundários:** o evento de "visto" e a
+  aresta do grafo são gravados depois (o grafo, depois do COMMIT); se o banco
+  estiver fora, a página e a compra seguem (cenários X4, Y4).
 - O seed grava os pedidos em **ordem cronológica** (correlação ≈ 1): é isso que
   faz o BRIN do Laboratório de Índices funcionar.
 - O Laboratório de Índices só cria/remove índices **do catálogo**
@@ -148,6 +154,10 @@ API ao subir.
 
 **MongoDB** — não há migration: `catalog.GarantirEsquema` cria coleções,
 `$jsonSchema` e índices de forma idempotente a cada subida.
+
+**Cassandra e Neo4j** — também sem migration: o keyspace e a tabela
+(`cassandra.GarantirEsquema`) e as restrições `UNIQUE` do grafo são criados
+pela API, de forma idempotente, na primeira vez que o banco responde.
 
 **Redis** — toda chave tem prefixo (`carrinho:`, `cache:produto:`, `ranking:`,
 `rl:`, `stream:`, `sessao:`) e, se for temporária, TTL. Nunca use `KEYS`: use `SCAN`.
@@ -214,12 +224,13 @@ O relatório do E2E fica em `e2e/relatorio/resumo.md`.
 > [!IMPORTANT]
 > O ambiente é um WSL com **~3,8 GB** de RAM, dividido com o Windows.
 >
-> - **Só sobe o que o projeto já usa.** Testes de integração sobem apenas
->   PostgreSQL, MongoDB e Redis; o E2E sobe o núcleo (postgres,
->   postgres-replica, pgbouncer, mongo, redis, api, web) **e o perfil `ha`**
->   (Fase 5, ~600 MB). **Cassandra e Neo4j não sobem em teste nem no dia a
->   dia** até a Fase 7 começar a usá-los; o perfil `nosql` existe só para isso.
->   O perfil `tools` também não sobe em teste, e o `ha` fica fora do dia a dia
+> - **Só sobe o que o projeto já usa.** Testes de integração sobem
+>   PostgreSQL, MongoDB e Redis; Cassandra e Neo4j só nos testes da Fase 7
+>   (`fase7_integration_test.go`). O E2E sobe o núcleo (postgres,
+>   postgres-replica, pgbouncer, mongo, redis, cassandra, neo4j, api, web)
+>   **e o perfil `ha`** (Fase 5, ~600 MB). Cassandra e Neo4j estão no núcleo
+>   desde a Fase 7, com heap reduzido no compose — não aumente sem medir.
+>   O perfil `tools` não sobe em teste, e o `ha` fica fora do dia a dia
 >   (`make up-ha` quando for usar o laboratório).
 > - Ao chegar a fase de um banco novo, ele entra no `testinfra`, no stack de
 >   E2E (`e2e/rodar.sh`) e no `G1` do catálogo — nunca antes.
@@ -229,8 +240,9 @@ O relatório do E2E fica em `e2e/relatorio/resumo.md`.
 > - Para reconstruir só a API ou o front, use `docker compose up -d --build --no-deps api web`:
 >   sem `--no-deps`, o compose reconstrói e **recria o primário** (é dependência),
 >   derrubando conexões e a replicação por alguns segundos (cenário S8).
-> - Portas: desenvolvimento `3000 8080 5432 5433 6432 27017 6379` (+ `7000`
->   com o perfil `ha`); E2E `23000 28080 25432 25433 26432 27117 26379 27000`.
+> - Portas: desenvolvimento `3000 8080 5432 5433 6432 27017 6379 9042 7474 7687`
+>   (+ `7000` com o perfil `ha`); E2E `23000 28080 25432 25433 26432 27117 26379
+>   29042 27474 27687 27000`.
 >   Exceção que fica sempre de pé: `registry-local`.
 
 ## 📝 Documentação

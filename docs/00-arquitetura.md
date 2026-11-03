@@ -42,22 +42,25 @@ sequenceDiagram
         A->>M: findOne({_id: 123})
         A->>R: SET cache:produto:123 EX 300
     end
-    A-->>C: INSERT evento "visualizou" (assíncrono, Fase 7)
+    A-->>C: INSERT em vistos_por_cliente USING TTL (prazo de 500 ms — falha só vira log)
     U->>A: PUT /api/carrinho/itens/123
     A->>R: HSET carrinho:{sessao} 123 2
     U->>A: POST /api/carrinho/finalizar
     A->>P: BEGIN, UPDATE estoque (condicional), INSERT pedido e itens, COMMIT
     Note over A,R: só depois do COMMIT
     A->>R: DEL carrinho, ZINCRBY ranking:mais_vendidos, XADD stream:pedidos
-    A-->>N: MERGE (c)-[:COMPROU]->(p) (assíncrono, Fase 7)
+    A-->>N: MERGE (c)-[:COMPROU]->(s) (prazo de 2 s — falha só vira log)
 ```
 
 Repare que **só o checkout é transacional**. Cassandra e Neo4j são
-atualizados depois e de forma assíncrona: se falharem, a compra continua
-válida. Isso é **consistência eventual** entre os bancos. O padrão para
-fazer isso com segurança é o **Transactional Outbox**: grava-se um evento numa
-tabela `outbox` dentro da mesma transação do pedido, e um *worker* publica
-esse evento depois. Esse padrão é implementado na Fase 7.
+atualizados depois, como efeito secundário com prazo curto: se falharem, a
+página e a compra continuam valendo (cenários X4 e Y4). Isso é **consistência
+eventual** entre os bancos. Na Fase 7 a aresta perdida volta quando o grafo é
+**reconstruído a partir dos pedidos** (o PostgreSQL é a fonte da verdade).
+O padrão para não perder nada no caminho é o **Transactional Outbox**: grava-se
+um evento numa tabela `outbox` dentro da mesma transação do pedido, e um
+*worker* o publica depois. Ele **não** está implementado; é um dos exercícios
+de [fase-7.md](fases/fase-7.md#6-exercícios-para-você).
 
 ## Camadas do backend
 
