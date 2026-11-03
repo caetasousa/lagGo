@@ -1,0 +1,14 @@
+# Go
+backend/api
+backend/.env
+# Node
+frontend/node_modules/
+frontend/dist/
+# Geral
+.env
+.DS_Store
+*.log
+
+*.tsbuildinfo
+e2e/node_modules/
+e2e/relatorio/

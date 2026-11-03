@@ -1,0 +1,64 @@
+# Patroni (Fase 5, perfil ha): https://patroni.readthedocs.io/en/latest/yaml_configuration.html
+# O que muda de um nó para outro vem de variáveis de ambiente (docker-compose.yml):
+# PATRONI_NAME, PATRONI_RESTAPI_CONNECT_ADDRESS, PATRONI_POSTGRESQL_CONNECT_ADDRESS.
+
+scope: nosqlgo-ha            # nome do cluster (a "pasta" dele no etcd)
+
+restapi:
+  listen: 0.0.0.0:8008       # /primary e /replica respondem 200 ou 503: o HAProxy decide por eles
+
+etcd3:
+  hosts: etcd1:2379,etcd2:2379,etcd3:2379
+
+bootstrap:
+  # Vai para o etcd na criação do cluster e vale para todos os nós. Muda depois
+  # com PATCH /config (o laboratório liga e desliga o synchronous_mode assim).
+  dcs:
+    # O líder renova uma chave com validade (TTL) a cada loop_wait segundos.
+    # Se ele sumir, a chave expira e a réplica mais atualizada assume:
+    # o failover leva no máximo ~ttl. Menor = failover mais rápido, mas mais
+    # sensível a uma rede lenta (falso positivo).
+    ttl: 20
+    loop_wait: 5
+    retry_timeout: 5
+    # Réplica atrasada mais que isto (bytes) não pode virar líder.
+    maximum_lag_on_failover: 1048576
+    synchronous_mode: false
+    postgresql:
+      use_pg_rewind: true      # o antigo líder volta como réplica sem ser clonado de novo
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        wal_log_hints: "on"    # exigido pelo pg_rewind
+        max_wal_senders: 10
+        max_replication_slots: 10
+        shared_buffers: 32MB   # cluster de laboratório: pouca memória
+        max_connections: 50
+        synchronous_commit: "on"
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+  pg_hba:
+    - local all all trust
+    - host all all 127.0.0.1/32 trust
+    - host replication replicador all scram-sha-256
+    - host all all all scram-sha-256
+
+postgresql:
+  listen: 0.0.0.0:5432
+  data_dir: /var/lib/postgresql/18/docker
+  bin_dir: /usr/local/bin
+  authentication:
+    superuser:
+      username: marketplace
+      password: marketplace      # credenciais de desenvolvimento (Fase 6: secrets)
+    replication:
+      username: replicador
+      password: replicador
+    rewind:
+      username: marketplace
+      password: marketplace
+
+tags:
+  nofailover: false
+  noloadbalance: false

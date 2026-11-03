@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "marketplace (primário)",
+      "Group": "nosqlGo",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "marketplace",
+      "Username": "marketplace",
+      "SSLMode": "disable"
+    }
+  }
+}
