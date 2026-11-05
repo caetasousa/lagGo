@@ -481,5 +481,6 @@ export type ResultadoConsistencia = { rf: number; replicas_vivas: number; keyspa
 export type PerguntaGrafo = 'tambem_comprou' | 'alcance'
 export type LinhaGrafo = { sku_id: string; forca: number }
 export type MedidaGrafo = { banco: string; consulta: string; ms: number; linhas: LinhaGrafo[]; total: number }
-export type ResultadoGrafo = { pergunta: PerguntaGrafo; sku_id: string; grafo: MedidaGrafo; sql: MedidaGrafo; iguais: boolean }
-export type SkuParaOGrafo = { id: string; descricao: string; compradores: number }
+// nomes: sku → "produto · vendedor", do catálogo (MongoDB), só para rótulo.
+export type ResultadoGrafo = { pergunta: PerguntaGrafo; sku_id: string; grafo: MedidaGrafo; sql: MedidaGrafo; iguais: boolean; nomes: Record<string, string> }
+export type SkuParaOGrafo = { id: string; descricao: string; nome: string; compradores: number }

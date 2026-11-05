@@ -48,17 +48,40 @@ func (l *Consistencia) Rodar(ctx context.Context, rf int) (dominio.ResultadoCons
 
 // GrafoXSQL: a mesma pergunta no Neo4j e no PostgreSQL.
 type GrafoXSQL struct {
-	grafo portas.GrafoLab
-	sql   portas.SQLDoGrafo
-	mu    sync.Mutex
+	grafo    portas.GrafoLab
+	sql      portas.SQLDoGrafo
+	catalogo portas.NomesDoCatalogo
+	mu       sync.Mutex
 }
 
-func NovoGrafoXSQL(g portas.GrafoLab, s portas.SQLDoGrafo) *GrafoXSQL {
-	return &GrafoXSQL{grafo: g, sql: s}
+func NovoGrafoXSQL(g portas.GrafoLab, s portas.SQLDoGrafo, c portas.NomesDoCatalogo) *GrafoXSQL {
+	return &GrafoXSQL{grafo: g, sql: s, catalogo: c}
 }
 
 func (l *GrafoXSQL) Skus(ctx context.Context) ([]dominio.SkuParaOGrafo, error) {
-	return l.sql.SkusParaOGrafo(ctx)
+	skus, err := l.sql.SkusParaOGrafo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(skus))
+	for i, s := range skus {
+		ids[i] = s.ID
+	}
+	nomes := l.nomes(ctx, ids)
+	for i := range skus {
+		skus[i].Nome = nomes[skus[i].ID]
+	}
+	return skus, nil
+}
+
+// nomes: o nome de cada SKU no catálogo. É só rótulo: se o MongoDB falhar,
+// a comparação continua valendo e a tela mostra o id.
+func (l *GrafoXSQL) nomes(ctx context.Context, ids []string) map[string]string {
+	n, err := l.catalogo.NomesDosSkus(ctx, ids)
+	if err != nil || n == nil {
+		return map[string]string{}
+	}
+	return n
 }
 
 func (l *GrafoXSQL) Rodar(ctx context.Context, pergunta, sku string) (dominio.ResultadoGrafo, error) {
@@ -89,5 +112,12 @@ func (l *GrafoXSQL) Rodar(ctx context.Context, pergunta, sku string) (dominio.Re
 		return r, dominio.ErrValidacao{Msg: "o Neo4j não respondeu: " + err.Error()}
 	}
 	r.Iguais = dominio.MesmaResposta(r.Grafo, r.SQL)
+	ids := []string{sku}
+	for _, m := range []dominio.Medida{r.Grafo, r.SQL} {
+		for _, linha := range m.Linhas {
+			ids = append(ids, linha.SkuID)
+		}
+	}
+	r.Nomes = l.nomes(ctx, ids)
 	return r, nil
 }

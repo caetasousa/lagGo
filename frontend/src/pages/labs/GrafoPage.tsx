@@ -7,7 +7,7 @@ import { Fontes, type IdFonte } from '../../components/fontes'
 import { IlustracaoGrafoCompras } from '../../components/IlustracoesFase7'
 import { TutorialGrafo } from '../../components/tutoriais'
 import { Banco, Conceito, Conclusao, Explicacao, SobreOpcao, Titulo, ms } from '../../components/ui'
-import { Ficha } from '../../components/usos'
+import { Ficha, UsoSelo } from '../../components/usos'
 
 // Laboratório Grafo × SQL (Fase 7, Neo4j e PostgreSQL, tópico 8.8, docs/07).
 
@@ -45,7 +45,10 @@ export function GrafoPage() {
   const rodar = useMutation({ mutationFn: () => post<ResultadoGrafo>('/lab/grafo', { pergunta, sku_id: escolhido }) })
   // Durante uma nova pergunta, o resultado anterior some (não confunde a leitura).
   const r = rodar.isPending ? undefined : rodar.data
-  const nomeDoSku = (id: string) => skus.data?.find((s) => s.id === id)?.descricao ?? id.slice(0, 8)
+  // O grafo e o SQL só conhecem o id do SKU; o nome que a pessoa reconhece
+  // (produto · vendedor) está no catálogo do MongoDB e vem junto da resposta (Y5).
+  const rotuloDaPartida = (s: SkuParaOGrafo) => s.nome || s.descricao
+  const nomeDoSku = (id: string) => r?.nomes?.[id] || skus.data?.find((s) => s.id === id)?.nome || id.slice(0, 8)
   const e = reconstruir.data ?? estado.data
 
   return (
@@ -68,8 +71,8 @@ export function GrafoPage() {
         </dl>
       </Conceito>
       <TutorialGrafo />
-      <Ficha usos={['neo4j-grafo', 'pg-pedidos']}>
-        O lado grafo lê o Neo4j (serviço <code>neo4j</code>); o lado SQL lê <code>pedido</code> e <code>item_pedido</code> no PostgreSQL. O SKU do Laboratório de Concorrência fica de fora dos dois (as compras dele não passam pelo grafo).
+      <Ficha usos={['neo4j-grafo', 'pg-pedidos', 'mongo-catalogo']}>
+        O lado grafo lê o Neo4j (serviço <code>neo4j</code>); o lado SQL lê <code>pedido</code> e <code>item_pedido</code> no PostgreSQL. Depois de medir, o nome de cada produto vem do catálogo no MongoDB (fora do tempo medido). O SKU do Laboratório de Concorrência fica de fora dos dois (as compras dele não passam pelo grafo).
       </Ficha>
 
       <div className="passos">
@@ -98,7 +101,7 @@ export function GrafoPage() {
           <div className="form-linha">
             <label>SKU de partida
               <select value={escolhido} onChange={(ev) => setSku(ev.target.value)}>
-                {skus.data?.map((s) => <option key={s.id} value={s.id}>{s.descricao} · {s.compradores} compradores</option>)}
+                {skus.data?.map((s) => <option key={s.id} value={s.id}>{rotuloDaPartida(s)} · {s.compradores} compradores</option>)}
               </select>
             </label>
           </div>
@@ -116,23 +119,32 @@ export function GrafoPage() {
 
       {r && (
         <>
-          <ConclusaoGrafo r={r} />
+          <ConclusaoGrafo r={r} nome={nomeDoSku} />
           <div className="graficos">
             <Barras titulo="Tempo da consulta (ms)" unidade="ms"
                     dados={[{ nome: 'Neo4j', v: r.grafo.ms, cor: 'var(--serie-1)' }, { nome: 'PostgreSQL', v: r.sql.ms, cor: 'var(--serie-2)' }]} />
           </div>
           {r.pergunta === 'tambem_comprou' && (
-            <table aria-label="Resposta dos dois bancos">
-              <thead><tr><th>#</th><th>SKU (Neo4j)</th><th>Força</th><th>SKU (PostgreSQL)</th><th>Força</th></tr></thead>
-              <tbody>
-                {r.grafo.linhas.map((l, i) => (
-                  <tr key={i} className={r.sql.linhas[i]?.sku_id === l.sku_id ? undefined : 'ruim'}>
-                    <td>{i + 1}</td><td>{nomeDoSku(l.sku_id)}</td><td className="num">{l.forca}</td>
-                    <td>{r.sql.linhas[i] ? nomeDoSku(r.sql.linhas[i].sku_id) : '—'}</td><td className="num">{r.sql.linhas[i]?.forca ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <>
+              <p className="small muted">
+                Os bancos comparam ids de SKU; o nome de cada produto e o vendedor vêm do catálogo, só para leitura. <UsoSelo id="mongo-catalogo" />
+              </p>
+              <table aria-label="Resposta dos dois bancos">
+                <thead>
+                  <tr><th colSpan={5}>Quem comprou <strong>{nomeDoSku(r.sku_id)}</strong> também comprou…</th></tr>
+                  <tr><th>#</th><th>Produto (Neo4j)</th><th>Clientes</th><th>Produto (PostgreSQL)</th><th>Clientes</th></tr>
+                </thead>
+                <tbody>
+                  {r.grafo.linhas.map((l, i) => (
+                    <tr key={i} className={r.sql.linhas[i]?.sku_id === l.sku_id ? undefined : 'ruim'}>
+                      <td>{i + 1}</td><td className="produto">{nomeDoSku(l.sku_id)}</td><td className="num">{l.forca}</td>
+                      <td className="produto">{r.sql.linhas[i] ? nomeDoSku(r.sql.linhas[i].sku_id) : '—'}</td><td className="num">{r.sql.linhas[i]?.forca ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="small muted">"Clientes" é a <strong>força</strong>: quantos clientes distintos compraram os dois produtos.</p>
+            </>
           )}
         </>
       )}
@@ -152,7 +164,8 @@ export function GrafoPage() {
   )
 }
 
-function ConclusaoGrafo({ r }: { r: ResultadoGrafo }) {
+function ConclusaoGrafo({ r, nome }: { r: ResultadoGrafo; nome: (sku: string) => string }) {
+  const forte = r.grafo.linhas[0]
   const maisRapido = r.grafo.ms <= r.sql.ms ? 'Neo4j' : 'PostgreSQL'
   const fator = Math.max(r.grafo.ms, r.sql.ms) / Math.max(Math.min(r.grafo.ms, r.sql.ms), 0.001)
   if (!r.iguais) {
@@ -166,7 +179,9 @@ function ConclusaoGrafo({ r }: { r: ResultadoGrafo }) {
     <Conclusao tipo="boa" titulo={`Os dois bancos deram a mesma resposta; o ${maisRapido} foi ${fator.toFixed(1)}× mais rápido.`}>
       {r.pergunta === 'alcance'
         ? <>{r.grafo.total.toLocaleString('pt-BR')} clientes alcançados em 3 saltos. </>
-        : <>A lista dos 10 mais fortes é idêntica nos dois. </>}
+        : forte
+          ? <>Quem comprou <strong>{nome(r.sku_id)}</strong> também comprou, antes de tudo, <strong>{nome(forte.sku_id)}</strong> ({forte.forca} {forte.forca === 1 ? 'cliente levou' : 'clientes levaram'} os dois) — e a lista dos 10 mais fortes é idêntica nos dois bancos. </>
+          : <>Ninguém que comprou <strong>{nome(r.sku_id)}</strong> comprou outro produto — as duas listas vêm vazias. </>}
       Neo4j: {ms(r.grafo.ms)} · PostgreSQL: {ms(r.sql.ms)}. Como o grafo é pequeno (cabe na memória dos dois), a diferença vem de <em>como</em> cada um anda: ponteiros entre vizinhos no Neo4j, JOINs com índices no PostgreSQL. Rode as duas perguntas e veja qual cresce mais com o salto extra.
     </Conclusao>
   )

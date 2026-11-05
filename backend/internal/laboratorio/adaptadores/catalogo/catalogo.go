@@ -2,7 +2,8 @@
 // do catálogo da loja direto do MongoDB (pelo adaptador da própria loja) e
 // pelo Redis, na mesma chave e no mesmo formato que a loja usa
 // (cache:produto:{id}, o JSON do produto) — a loja continua lendo a cópia
-// que o laboratório deixa. Implementa portas.CatalogoParaCache.
+// que o laboratório deixa. Implementa portas.CatalogoParaCache e, para o
+// Laboratório Grafo × SQL, portas.NomesDoCatalogo (só leitura).
 package catalogo
 
 import (
@@ -84,4 +85,41 @@ func (c *Catalogo) NoCache(ctx context.Context, id string) (int64, time.Duration
 	bytes, _ := c.rdb.MemoryUsage(ctx, prefixoCache+id).Result()
 	ttl, _ := c.rdb.TTL(ctx, prefixoCache+id).Result()
 	return bytes, ttl
+}
+
+// NomesDosSkus: "produto · vendedor" de cada SKU. Os SKUs moram DENTRO do
+// documento do produto (array skus), então a busca é pelo índice multikey
+// skus.sku_id; $unwind abre o array e o segundo $match deixa só os SKUs
+// pedidos (um produto pode ter outros SKUs que não interessam).
+func (c *Catalogo) NomesDosSkus(ctx context.Context, skus []string) (map[string]string, error) {
+	nomes := map[string]string{}
+	if len(skus) == 0 {
+		return nomes, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	filtro := bson.D{{Key: "skus.sku_id", Value: bson.D{{Key: "$in", Value: skus}}}}
+	cur, err := c.db.Collection(colecaoProdutos).Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: filtro}},
+		{{Key: "$unwind", Value: "$skus"}},
+		{{Key: "$match", Value: filtro}},
+		{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0}, {Key: "nome", Value: 1},
+			{Key: "sku", Value: "$skus.sku_id"}, {Key: "vendedor", Value: "$skus.vendedor"}}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var linhas []struct {
+		Nome     string `bson:"nome"`
+		Sku      string `bson:"sku"`
+		Vendedor string `bson:"vendedor"`
+	}
+	if err := cur.All(ctx, &linhas); err != nil {
+		return nil, err
+	}
+	for _, l := range linhas {
+		nomes[l.Sku] = l.Nome + " · " + l.Vendedor
+	}
+	return nomes, nil
 }

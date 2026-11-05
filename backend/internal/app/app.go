@@ -159,6 +159,7 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 
 	// ---------------------------------------------------------- laboratório
 	backup := labpg.NovoBackup(c.Postgres, c.PostgresURL)
+	catalogoDoLab := labcatalogo.Novo(c.Mongo, c.MongoDB, c.Redis)
 	lab := labhttp.NovosHandlers(labhttp.Labs{
 		Corrida:    labapp.NovaCorrida(labpg.NovoEstoque(c.Postgres), labloja.Nova(checkout)),
 		Isolamento: labapp.NovoIsolamento(labpg.NovoIsolamento(c.Postgres)),
@@ -168,13 +169,13 @@ func Montar(ctx context.Context, c Conexoes, op Opcoes) (http.Handler, error) {
 		Replicacao: labapp.NovaReplicacao(labpg.NovaReplicacao(c.Postgres, c.PostgresReplica)),
 		Backup:     labapp.NovoBackup(backup),
 		Indices:    labapp.NovosIndices(labpg.NovosIndices(c.Postgres)),
-		Cache:      labapp.NovoCache(labcatalogo.Novo(c.Mongo, c.MongoDB, c.Redis)),
+		Cache:      labapp.NovoCache(catalogoDoLab),
 		HA: labapp.NovoHA(
 			labha.NovoPatroni(c.HA.PostgresURL, c.HA.PatroniURLs),
 			labha.NovoMongoRS(c.HA.MongoURI),
 			labha.NovoSentinel(c.HA.RedisSentinels)),
 		Consistencia: labapp.NovaConsistencia(labcassandra.NovaConsistencia(c.Cassandra)),
-		GrafoXSQL:    labapp.NovoGrafoXSQL(labneo4j.NovoGrafo(c.Neo4j, c.Neo4jErr), labpg.NovoGrafoSQL(c.Postgres)),
+		GrafoXSQL:    labapp.NovoGrafoXSQL(labneo4j.NovoGrafo(c.Neo4j, c.Neo4jErr), labpg.NovoGrafoSQL(c.Postgres), catalogoDoLab),
 	})
 
 	// ---------------------------------------------------------- rotas

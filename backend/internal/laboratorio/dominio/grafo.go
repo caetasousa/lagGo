@@ -35,6 +35,11 @@ type ResultadoGrafo struct {
 	Grafo    Medida `json:"grafo"`
 	SQL      Medida `json:"sql"`
 	Iguais   bool   `json:"iguais"` // as duas respostas batem (Y3)
+	// Nomes: sku → "produto · vendedor", lidos do catálogo (MongoDB) DEPOIS
+	// da medição — para a resposta se ler como "quem comprou X também
+	// comprou Y" (Y5). Ficam fora das consultas medidas: um JOIN a mais no
+	// SQL (ou uma propriedade a mais no grafo) mudaria o que se compara.
+	Nomes map[string]string `json:"nomes"`
 }
 
 // MesmaResposta: o top (sku e força, na ordem) e o total são iguais.
@@ -46,5 +51,6 @@ func MesmaResposta(a, b Medida) bool {
 type SkuParaOGrafo struct {
 	ID          string `json:"id"`
 	Descricao   string `json:"descricao"`
+	Nome        string `json:"nome"` // "produto · vendedor", do catálogo (Y5)
 	Compradores int64  `json:"compradores"`
 }

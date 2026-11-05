@@ -4,6 +4,7 @@ package app_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -125,21 +126,31 @@ func TestConsistenciaAjustavel(t *testing.T) {
 	}
 }
 
-// Como quebra (Y1, Y2, Y3): a compra não entra no grafo; o grafo não se
+// Como quebra (Y1, Y2, Y3, Y5): a compra não entra no grafo; o grafo não se
 // reconstrói dos pedidos; a recomendação inclui o próprio produto ou vem
-// fora de ordem; Cypher e SQL respondem coisas diferentes.
+// fora de ordem; Cypher e SQL respondem coisas diferentes; a resposta do
+// laboratório não diz de que produto é cada SKU.
 func TestGrafoDeComprasERecomendacoes(t *testing.T) {
 	s := novoServidorFase7(t)
 	s.semearCatalogo()
 	ctx := context.Background()
+	nomeDoProduto := map[string]string{} // sku → nome do produto no catálogo
 	produtoDe := func(sku uuid.UUID) string {
 		var p struct {
-			ID bson.ObjectID `bson:"_id"`
+			ID   bson.ObjectID `bson:"_id"`
+			Nome string        `bson:"nome"`
 		}
 		if err := s.mg.Collection("produtos").FindOne(ctx, bson.D{{Key: "skus.sku_id", Value: sku.String()}}).Decode(&p); err != nil {
 			t.Fatalf("produto do sku %s: %v", sku, err)
 		}
+		nomeDoProduto[sku.String()] = p.Nome
 		return p.ID.Hex()
+	}
+	nomeNoCatalogo := func(sku string) string {
+		if _, ok := nomeDoProduto[sku]; !ok {
+			produtoDe(uuid.MustParse(sku))
+		}
+		return nomeDoProduto[sku]
 	}
 	// Três SKUs de produtos DIFERENTES (o seed sorteia; dois SKUs do mesmo
 	// produto tornariam a recomendação ambígua).
@@ -203,20 +214,51 @@ func TestGrafoDeComprasERecomendacoes(t *testing.T) {
 	}
 
 	// Y3: Cypher e SQL respondem a mesma coisa.
+	type linha struct {
+		SkuID string `json:"sku_id"`
+		Forca int64
+	}
 	for _, pergunta := range []string{"tambem_comprou", "alcance"} {
 		var r struct {
 			Iguais bool
 			Grafo  struct {
-				Linhas []any
+				Linhas []linha
 				Total  int64
 			}
 			SQL struct {
-				Linhas []any
+				Linhas []linha
 				Total  int64
 			}
+			Nomes map[string]string
 		}
 		if st := s.req("POST", "/api/lab/grafo", map[string]string{"pergunta": pergunta, "sku_id": sk[1].ID.String()}, &r); st != 200 || !r.Iguais {
 			t.Fatalf("[Y3] %s: %d, iguais=%v grafo=%+v sql=%+v", pergunta, st, r.Iguais, r.Grafo, r.SQL)
+		}
+		// Y5: o SKU de partida e cada SKU da resposta vêm com o nome do
+		// produto do catálogo (MongoDB) — e o vendedor, que distingue dois
+		// SKUs do mesmo produto.
+		ids := []string{sk[1].ID.String()}
+		for _, l := range r.Grafo.Linhas {
+			ids = append(ids, l.SkuID)
+		}
+		if pergunta == "tambem_comprou" && len(ids) < 2 {
+			t.Fatalf("[Y5] a resposta veio vazia: %+v", r.Grafo)
+		}
+		for _, id := range ids {
+			if n := nomeNoCatalogo(id); !strings.HasPrefix(r.Nomes[id], n+" · ") {
+				t.Fatalf("[Y5] %s: nome %q (esperado %q · vendedor)", id, r.Nomes[id], n)
+			}
+		}
+	}
+
+	// Y5: os SKUs oferecidos como ponto de partida também têm nome.
+	var partidas []struct{ ID, Nome string }
+	if st := s.req("GET", "/api/lab/grafo/skus", nil, &partidas); st != 200 || len(partidas) == 0 {
+		t.Fatalf("[Y5] skus: %d %+v", st, partidas)
+	}
+	for _, p := range partidas {
+		if n := nomeNoCatalogo(p.ID); !strings.HasPrefix(p.Nome, n+" · ") {
+			t.Fatalf("[Y5] ponto de partida %s: nome %q (esperado %q · vendedor)", p.ID, p.Nome, n)
 		}
 	}
 }

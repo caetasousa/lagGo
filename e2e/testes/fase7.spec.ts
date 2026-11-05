@@ -74,7 +74,7 @@ test('[Y1] [Y2] uma compra entra no grafo e a página do produto recomenda pela 
   await expect(page.getByRole('heading', { name: /Quem comprou também comprou/ })).toContainText('Neo4j')
 })
 
-test('[Y3] Grafo × SQL: as duas consultas dão a mesma resposta (e o grafo se reconstrói dos pedidos)', async ({ page }) => {
+test('[Y3] [Y5] Grafo × SQL: as duas consultas dão a mesma resposta, dita com o nome dos produtos (e o grafo se reconstrói dos pedidos)', async ({ page }) => {
   test.setTimeout(180_000)
   await page.goto('/lab/grafo')
   await page.getByRole('button', { name: 'Reconstruir o grafo a partir dos pedidos' }).click()
@@ -86,5 +86,21 @@ test('[Y3] Grafo × SQL: as duas consultas dão a mesma resposta (e o grafo se r
     await page.getByRole('radiogroup', { name: 'Pergunta' }).getByText(pergunta, { exact: true }).click()
     await page.getByRole('button', { name: 'Perguntar aos dois bancos' }).click()
     await expect(page.getByRole('status', { name: 'Conclusão' })).toContainText('mesma resposta', { timeout: 60_000 })
+    if (pergunta !== 'Quem comprou também comprou (2 saltos)') continue
+
+    // Y5: a resposta se lê como frase — "quem comprou <produto> também
+    // comprou <produto>" —, com o nome que está no catálogo (MongoDB), e não
+    // o id do SKU nem o código da descrição do PostgreSQL.
+    // A opção é "produto · vendedor · N compradores": o cabeçalho repete o SKU sem a contagem.
+    const partida = (await page.getByLabel('SKU de partida').locator('option:checked').textContent())!.replace(/ · \d+ compradores$/, '')
+    const tabela = page.getByRole('table', { name: 'Resposta dos dois bancos' })
+    await expect(tabela.getByRole('columnheader').first(), '[Y5] o cabeçalho diz de onde partiu').toContainText(`Quem comprou ${partida} também comprou`)
+    const produtos = await tabela.locator('tbody td.produto').allTextContents()
+    expect(produtos.length, '[Y5] há linhas na resposta').toBeGreaterThan(0)
+    for (const p of produtos) {
+      expect(p, '[Y5] produto e vendedor, não um id').toMatch(/^\S.* · \S/)
+      expect(p, '[Y5] não é um pedaço de UUID').not.toMatch(/^[0-9a-f]{8}\b/)
+    }
+    await expect(page.getByRole('status', { name: 'Conclusão' }), '[Y5] a conclusão dá o exemplo mais forte').toContainText(`Quem comprou ${partida} também comprou`)
   }
 })

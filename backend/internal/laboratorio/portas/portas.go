@@ -132,6 +132,13 @@ type GrafoLab interface {
 	Alcance(ctx context.Context, sku string) (dominio.Medida, error)
 }
 
+// NomesDoCatalogo: como cada SKU aparece para quem compra — o nome do
+// produto e o vendedor, que só o documento do MongoDB tem. Os ids sem
+// produto no catálogo ficam fora do mapa.
+type NomesDoCatalogo interface {
+	NomesDosSkus(ctx context.Context, skus []string) (map[string]string, error)
+}
+
 // SQLDoGrafo: a MESMA pergunta respondida no PostgreSQL (self-joins).
 type SQLDoGrafo interface {
 	TambemCompraram(ctx context.Context, sku string) (dominio.Medida, error)

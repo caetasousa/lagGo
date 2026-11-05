@@ -22,7 +22,7 @@ seguem (X4, Y4), e o grafo inteiro se reconstrói dos pedidos.
 | 7.4 | Laboratório de Consistência | [`laboratorio/dominio/consistencia.go`](../../backend/internal/laboratorio/dominio/consistencia.go) (R + W > RF) e o adaptador `laboratorio/adaptadores/cassandra`: keyspaces `lab_rf1` e `lab_rf3`, uma escrita e uma leitura por nível | `[X3]` |
 | 7.5 | Grafo de compras | [`neo4j/grafo.go`](../../backend/internal/loja/adaptadores/neo4j/grafo.go): `UNWIND` + `MERGE`, restrições `UNIQUE`; o checkout da loja grava a compra no grafo **depois do COMMIT**; `Recomendacoes.Reconstruir` refaz tudo a partir de [`recomendacoes.sql`](../../backend/db/queries/recomendacoes.sql) em lotes | `[Y1]`, `[Y4]` |
 | 7.6 | Recomendações | "Quem comprou também comprou" na página do produto: dois saltos no Neo4j, SKUs viram produtos (MongoDB), o próprio produto sai | `[Y2]` |
-| 7.7 | Laboratório Grafo × SQL | a mesma pergunta em Cypher e em SQL (`laboratorio/adaptadores/neo4j` e `postgres/grafo_sql.go`), com tempos e a conferência de que as respostas batem | `[Y3]` |
+| 7.7 | Laboratório Grafo × SQL | a mesma pergunta em Cypher e em SQL (`laboratorio/adaptadores/neo4j` e `postgres/grafo_sql.go`), com tempos e a conferência de que as respostas batem; a resposta se lê como "quem comprou X também comprou Y", com o nome do produto e o vendedor vindos do catálogo (MongoDB, `laboratorio/adaptadores/catalogo`) **depois** da medição, para não entrar no tempo comparado | `[Y3]`, `[Y5]` |
 | 7.8 | Didática | tutoriais "do zero", ilustrações ([`IlustracoesFase7.tsx`](../../frontend/src/components/IlustracoesFase7.tsx)), fontes verificadas, selos `cassandra-vistos`, `cassandra-consistencia` e `neo4j-grafo`; laboratórios agrupados pelos serviços `cassandra` e `neo4j` | `[K1]`–`[K5]`, `[L6]` |
 | 7.9 | Quadro comparativo final | [docs/07 §4](../07-nosql.md#4-quadro-comparativo-final): modelo, esquema, transações, escala, consistência, PACELC e casos de uso dos cinco bancos | `[M1]` |
 
@@ -132,7 +132,7 @@ curl -X POST localhost:8080/api/lab/grafo -H 'Content-Type: application/json' -d
 - **Início:** "Vistos recentemente" (selo Cassandra), para quem está logado.
 - **Produto:** "Quem comprou também comprou" (selo Neo4j), com a força de cada sugestão.
 - **Laboratórios → cassandra → Consistência ajustável** (`/lab/consistencia`): escolha RF=1 ou RF=3 e veja cada nível escrever e ler.
-- **Laboratórios → neo4j → Grafo × SQL** (`/lab/grafo`): reconstruir o grafo, escolher a pergunta e o SKU, ver as duas consultas, os tempos e se as respostas batem.
+- **Laboratórios → neo4j → Grafo × SQL** (`/lab/grafo`): reconstruir o grafo, escolher a pergunta e o SKU, ver as duas consultas, os tempos e se as respostas batem. Na pergunta de 2 saltos, a tabela diz "Quem comprou *produto* também comprou…", com o nome de cada produto e a força em clientes.
 
 ## 6. Exercícios para você
 
