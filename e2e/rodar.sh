@@ -46,7 +46,31 @@ trap no_fim EXIT
 
 echo "→ stack de E2E do zero ($projeto: ${servicos[*]})"
 derrubar
-"${compose[@]}" up -d --build --quiet-pull --wait "${servicos[@]}"
+# Sobe tudo, mas espera só o que a semeadura usa. O Cassandra (JVM, ~70 s) e
+# a réplica (base backup, ~50 s) terminam de subir enquanto o seed e o
+# npm ci rodam; o stack inteiro é esperado de novo antes dos testes.
+"${compose[@]}" up -d --build --quiet-pull "${servicos[@]}"
+"${compose[@]}" up -d --wait postgres mongo redis neo4j api
+
+# O runner nasce já agora: o npm ci (~15 s) corre junto com o seed, e o
+# Playwright só começa quando o rodar.sh cria /tmp/pronto.
+commit="$(git rev-parse --short HEAD 2>/dev/null || echo 'sem git')"
+if git rev-parse --git-dir >/dev/null 2>&1 && [ -n "$(git status --porcelain)" ]; then
+	commit="$commit (com alterações não commitadas)"
+fi
+rm -rf e2e/relatorio
+# Copia a suíte para dentro do container em vez de montar a pasta: assim o
+# node_modules e o relatório não nascem com dono root na máquina.
+docker create --name "$runner" --network "${projeto}_default" --ipc=host --workdir /e2e \
+	-e E2E_BASE_URL=http://web -e E2E_DOCS=/docs -e E2E_COMMIT="$commit" \
+	"$imagem_pw" bash -c "npm ci --no-audit --no-fund --silent || exit 1
+		until [ -f /tmp/pronto ]; do sleep 0.5; done
+		export E2E_IMAGENS=\"\$(cat /tmp/imagens)\"
+		npx playwright test ${E2E_ARGS:-}; r=\$?; node resumo.mjs; exit \$r" >/dev/null
+tar -C e2e --exclude node_modules --exclude relatorio -cf - . | docker cp - "$runner:/e2e"
+# docs/ também vai: os testes [M*] comparam o que a tela mostra com os arquivos .md.
+docker cp docs "$runner:/docs"
+docker start "$runner" >/dev/null
 
 echo "→ semeando"
 "${compose[@]}" exec -T postgres psql -q -U marketplace -d marketplace -v ON_ERROR_STOP=1 \
@@ -55,28 +79,19 @@ if "${compose[@]}" exec -T api sh -c 'command -v seed-catalogo' >/dev/null 2>&1;
 	"${compose[@]}" exec -T api seed-catalogo
 fi
 
+echo "→ esperando o stack inteiro (Cassandra, réplica, clusters ha)"
+"${compose[@]}" up -d --wait "${servicos[@]}"
+
 # O commit e as imagens exatas vão para o resumo: é o que torna a execução repetível.
-commit="$(git rev-parse --short HEAD 2>/dev/null || echo 'sem git')"
-if git rev-parse --git-dir >/dev/null 2>&1 && [ -n "$(git status --porcelain)" ]; then
-	commit="$commit (com alterações não commitadas)"
-fi
 imagens="$(docker ps --filter "label=com.docker.compose.project=$projeto" \
 	--format '{{.Label "com.docker.compose.service"}} {{.Image}}' | while read -r servico img; do
 	echo "$servico $img@$(docker image inspect --format '{{.Id}}' "$img" | cut -c8-19)"
 done | sort)"
 
-rm -rf e2e/relatorio
 set +e
-# Copia a suíte para dentro do container em vez de montar a pasta: assim o
-# node_modules e o relatório não nascem com dono root na máquina.
-docker create --name "$runner" --network "${projeto}_default" --ipc=host --workdir /e2e \
-	-e E2E_BASE_URL=http://web -e E2E_DOCS=/docs -e E2E_COMMIT="$commit" -e E2E_IMAGENS="$imagens" \
-	"$imagem_pw" bash -c "npm ci --no-audit --no-fund --silent && npx playwright test ${E2E_ARGS:-}; r=\$?; node resumo.mjs; exit \$r" >/dev/null
-tar -C e2e --exclude node_modules --exclude relatorio -cf - . | docker cp - "$runner:/e2e"
-# docs/ também vai: os testes [M*] comparam o que a tela mostra com os arquivos .md.
-docker cp docs "$runner:/docs"
-docker start -a "$runner"
-resultado=$?
+printf '%s\n' "$imagens" | docker exec -i "$runner" sh -c 'cat > /tmp/imagens && touch /tmp/pronto'
+docker logs -f "$runner"
+resultado="$(docker wait "$runner")"
 docker cp "$runner:/e2e/relatorio" e2e/relatorio >/dev/null 2>&1
 set -e
 

@@ -20,6 +20,16 @@ export default defineConfig({
     ['html', { outputFolder: './relatorio/html', open: 'never' }],
     ['json', { outputFile: './relatorio/resultados.json' }],
   ],
+  // Os ensaios de alta disponibilidade (ha.spec.ts) são a corrente mais longa
+  // (~150 s): três failovers de verdade, um de cada vez (o laboratório recusa
+  // dois ensaios juntos). Num project próprio, declarado PRIMEIRO, eles
+  // entram na fila antes do resto e começam logo num worker, enquanto o
+  // outro worker anda com os demais arquivos. Sem isso, começavam no meio
+  // da execução e um worker terminava 90 s depois do outro.
+  projects: [
+    { name: 'ha', testMatch: /ha\.spec\.ts$/ },
+    { name: 'demais', testIgnore: /ha\.spec\.ts$/ },
+  ],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:23000',
     locale: 'pt-BR',
