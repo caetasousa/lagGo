@@ -82,25 +82,47 @@ test('[Y3] [Y5] Grafo × SQL: as duas consultas dão a mesma resposta, dita com 
   // sozinha já aparece antes, com o grafo antigo.
   await expect(page.getByRole('status', { name: 'Estado do grafo' })).toContainText(/\d[\d.]* relacionamentos COMPROU — reconstruído em/, { timeout: 150_000 })
 
+  // A opção é "produto · vendedor · N compradores": a resposta repete o SKU sem a contagem.
+  const partida = (await page.getByLabel('SKU de partida').locator('option:checked').textContent())!.replace(/ · \d+ compradores$/, '')
   for (const pergunta of ['Quem comprou também comprou (2 saltos)', 'Alcance em 3 saltos']) {
     await page.getByRole('radiogroup', { name: 'Pergunta' }).getByText(pergunta, { exact: true }).click()
     await page.getByRole('button', { name: 'Perguntar aos dois bancos' }).click()
     await expect(page.getByRole('status', { name: 'Conclusão' })).toContainText('mesma resposta', { timeout: 60_000 })
-    if (pergunta !== 'Quem comprou também comprou (2 saltos)') continue
 
-    // Y5: a resposta se lê como frase — "quem comprou <produto> também
-    // comprou <produto>" —, com o nome que está no catálogo (MongoDB), e não
-    // o id do SKU nem o código da descrição do PostgreSQL.
-    // A opção é "produto · vendedor · N compradores": o cabeçalho repete o SKU sem a contagem.
-    const partida = (await page.getByLabel('SKU de partida').locator('option:checked').textContent())!.replace(/ · \d+ compradores$/, '')
-    const tabela = page.getByRole('table', { name: 'Resposta dos dois bancos' })
-    await expect(tabela.getByRole('columnheader').first(), '[Y5] o cabeçalho diz de onde partiu').toContainText(`Quem comprou ${partida} também comprou`)
-    const produtos = await tabela.locator('tbody td.produto').allTextContents()
-    expect(produtos.length, '[Y5] há linhas na resposta').toBeGreaterThan(0)
-    for (const p of produtos) {
-      expect(p, '[Y5] produto e vendedor, não um id').toMatch(/^\S.* · \S/)
-      expect(p, '[Y5] não é um pedaço de UUID').not.toMatch(/^[0-9a-f]{8}\b/)
+    if (pergunta === 'Quem comprou também comprou (2 saltos)') {
+      // Y5: a resposta se lê como recomendação — "quem comprou <produto>
+      // também comprou <produto>" —, com o nome do catálogo (MongoDB), e não
+      // o id do SKU nem o código da descrição do PostgreSQL.
+      const resposta = page.getByRole('figure', { name: 'Quem comprou também comprou' })
+      await expect(resposta.getByRole('heading'), '[Y5] o título diz de onde partiu').toHaveText(`Quem comprou ${partida} também comprou…`)
+      const itens = resposta.getByRole('list', { name: 'Quem comprou também comprou' }).getByRole('listitem')
+      const produtos = await page.getByRole('table', { name: 'Resposta dos dois bancos' }).locator('tbody td.produto').allTextContents()
+      expect(produtos.length, '[Y5] há linhas na resposta').toBeGreaterThan(0)
+      await expect(itens, '[Y5] uma barra por linha da resposta').toHaveCount(produtos.length)
+      for (const [i, p] of produtos.entries()) {
+        expect(p, '[Y5] produto e vendedor, não um id').toMatch(/^\S.* · \S/)
+        expect(p, '[Y5] não é um pedaço de UUID').not.toMatch(/^[0-9a-f]{8}\b/)
+        await expect(itens.nth(i), '[Y5] a barra diz o produto e quantos clientes').toHaveText(new RegExp(`^${escapar(p)}[\\d.]+ clientes?$`))
+        await expect(itens.nth(i), '[Y5] a frase inteira na dica').toHaveAttribute('title', new RegExp(`^Quem comprou ${escapar(partida)} também comprou ${escapar(p)} — \\d+ clientes? (levou|levaram) os dois\\.$`))
+      }
+      await expect(page.getByRole('status', { name: 'Conclusão' }), '[Y5] a conclusão dá o exemplo mais forte').toContainText(`Quem comprou ${partida} também comprou`)
+    } else {
+      // Y5 no alcance: o total vem desmontado, salto a salto, com os
+      // produtos do meio que levam aos clientes novos.
+      const resposta = page.getByRole('figure', { name: 'Como o alcance se forma' })
+      await expect(resposta.getByRole('heading', { level: 3 }), '[Y5] o título diz o total').toHaveText(new RegExp(`^Quem comprou ${escapar(partida)} alcança, em 3 saltos, [\\d.]+ clientes? novos?$`))
+      await expect(resposta.getByRole('list', { name: 'Os três saltos' }).getByRole('listitem'), '[Y5] os três saltos').toHaveText([/^1º salto[\d.]+ clientes?/, /^2º salto[\d.]+ outros? produtos?/, /^3º salto[\d.]+ clientes? novos?/])
+      const caminhos = resposta.getByRole('table', { name: 'Caminhos do alcance' }).locator('tbody tr')
+      await expect(caminhos.first()).toBeVisible()
+      for (const c of await caminhos.all()) {
+        await expect(c.locator('td').first(), '[Y5] o produto do meio pelo nome').toHaveText(/^\S.* · \S/)
+        await expect(c, '[Y5] cada caminho é uma frase').toHaveAttribute('title', new RegExp(`^Quem comprou ${escapar(partida)} também comprou .+ · .+; e .+ foi comprado por [\\d.]+ clientes? que nunca compraram`))
+      }
     }
-    await expect(page.getByRole('status', { name: 'Conclusão' }), '[Y5] a conclusão dá o exemplo mais forte').toContainText(`Quem comprou ${partida} também comprou`)
   }
 })
+
+// Texto de produto vira parte de uma RegExp: parênteses ("vol. 5") e pontos são literais.
+function escapar(t: string) {
+  return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

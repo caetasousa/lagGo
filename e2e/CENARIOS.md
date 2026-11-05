@@ -95,7 +95,7 @@ Cobertos na camada de integração (`internal/app`), contra o PostgreSQL de verd
 | Y2 | a recomendação inclui o próprio produto, ou não vem ordenada pela força (quantos clientes compraram os dois) | sugestão sem sentido |
 | Y3 | o Laboratório Grafo × SQL compara consultas que respondem perguntas diferentes: o top da recomendação em Cypher e em SQL não bate | comparação de desempenho inválida |
 | Y4 | com o Neo4j fora do ar, a compra falha (o grafo é derivado: atualizá-lo é efeito depois do COMMIT) (integração: `internal/app`) | compra perdida por causa da recomendação |
-| Y5 | o Laboratório Grafo × SQL mostra a resposta só com o id do SKU (ou o código da `descricao`), sem dizer de que produto se trata: "quem comprou X também comprou Y" fica ilegível | o resultado não se liga a nada que a pessoa reconheça |
+| Y5 | o Laboratório Grafo × SQL mostra a resposta só com o id do SKU (ou o código da `descricao`), sem dizer de que produto se trata, ou não diz, para cada recomendação, "quem comprou X também comprou Y" (com quantos clientes levaram os dois); no alcance (3 saltos), mostra só o total, sem os saltos nem os produtos do meio por onde se chega aos clientes novos | o resultado não se liga a nada que a pessoa reconheça |
 
 ## A. Catálogo (MongoDB · Fase 3)
 

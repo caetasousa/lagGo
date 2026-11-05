@@ -40,6 +40,24 @@ WHERE NOT c2 IN compradores
 RETURN count(DISTINCT c2) AS total`
 )
 
+// CypherExplicarAlcance: o mesmo caminho do alcance, mas agrupado pelo SKU do
+// meio — quantos compradores de X o compraram (forca) e a quantos clientes
+// novos ele leva (novos). Não entra na comparação: só desmonta o número.
+// Ordena pela força: os caminhos mais percorridos a partir de X (pelos
+// novos, os SKUs populares empatam e o exemplo não ensina nada).
+const CypherExplicarAlcance = `MATCH (x:Sku {id: $sku})<-[:COMPROU]-(c1:Cliente)
+WITH x, collect(c1) AS compradores
+UNWIND compradores AS c1
+MATCH (c1)-[:COMPROU]->(s2:Sku)
+WHERE s2 <> x AND s2.id <> $lab
+WITH compradores, s2, count(DISTINCT c1) AS forca
+OPTIONAL MATCH (s2)<-[:COMPROU]-(c2:Cliente)
+WHERE NOT c2 IN compradores
+WITH compradores, s2, forca, count(DISTINCT c2) AS novos
+ORDER BY forca DESC, novos DESC, s2.id
+RETURN size(compradores) AS compradores, count(s2) AS intermediarios,
+       collect({sku: s2.id, forca: forca, novos: novos})[0..5] AS caminhos`
+
 type Grafo struct {
 	driver neo4j.Driver
 	erro   error
@@ -86,4 +104,22 @@ func (g *Grafo) Alcance(ctx context.Context, sku string) (dominio.Medida, error)
 	t, _ := r.Records[0].Get("total")
 	m.Total = t.(int64)
 	return m, nil
+}
+
+func (g *Grafo) ExplicarAlcance(ctx context.Context, sku string) (dominio.ExplicacaoAlcance, error) {
+	e := dominio.ExplicacaoAlcance{Caminhos: []dominio.CaminhoAlcance{}}
+	r, _, err := g.rodar(ctx, CypherExplicarAlcance, sku)
+	if err != nil || len(r.Records) == 0 { // sem compradores, o MATCH não devolve linha
+		return e, err
+	}
+	rec := r.Records[0]
+	c, _ := rec.Get("compradores")
+	i, _ := rec.Get("intermediarios")
+	e.Compradores, e.Intermediarios = c.(int64), i.(int64)
+	caminhos, _ := rec.Get("caminhos")
+	for _, x := range caminhos.([]any) {
+		m := x.(map[string]any)
+		e.Caminhos = append(e.Caminhos, dominio.CaminhoAlcance{SkuID: m["sku"].(string), Forca: m["forca"].(int64), Novos: m["novos"].(int64)})
+	}
+	return e, nil
 }

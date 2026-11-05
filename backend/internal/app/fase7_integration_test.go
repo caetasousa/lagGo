@@ -229,7 +229,14 @@ func TestGrafoDeComprasERecomendacoes(t *testing.T) {
 				Linhas []linha
 				Total  int64
 			}
-			Nomes map[string]string
+			Nomes      map[string]string
+			Explicacao *struct {
+				Compradores, Intermediarios int64
+				Caminhos                    []struct {
+					SkuID        string `json:"sku_id"`
+					Forca, Novos int64
+				}
+			}
 		}
 		if st := s.req("POST", "/api/lab/grafo", map[string]string{"pergunta": pergunta, "sku_id": sk[1].ID.String()}, &r); st != 200 || !r.Iguais {
 			t.Fatalf("[Y3] %s: %d, iguais=%v grafo=%+v sql=%+v", pergunta, st, r.Iguais, r.Grafo, r.SQL)
@@ -240,6 +247,19 @@ func TestGrafoDeComprasERecomendacoes(t *testing.T) {
 		ids := []string{sk[1].ID.String()}
 		for _, l := range r.Grafo.Linhas {
 			ids = append(ids, l.SkuID)
+		}
+		// Y5 no alcance: o número sozinho não ensina; a resposta diz como ele
+		// se forma. Do sku1: 2 compradores (clientes 0 e 1), que também
+		// compraram só o sku0 (força 2); o sku0 leva a 1 cliente novo (o 2).
+		if pergunta == "alcance" {
+			e := r.Explicacao
+			if e == nil || e.Compradores != 2 || e.Intermediarios != 1 || len(e.Caminhos) != 1 ||
+				e.Caminhos[0].SkuID != sk[0].ID.String() || e.Caminhos[0].Forca != 2 || e.Caminhos[0].Novos != 1 || r.Grafo.Total != 1 {
+				t.Fatalf("[Y5] explicação do alcance: %+v (total %d)", e, r.Grafo.Total)
+			}
+			ids = append(ids, e.Caminhos[0].SkuID)
+		} else if r.Explicacao != nil {
+			t.Fatalf("[Y5] explicação de alcance na pergunta de 2 saltos: %+v", r.Explicacao)
 		}
 		if pergunta == "tambem_comprou" && len(ids) < 2 {
 			t.Fatalf("[Y5] a resposta veio vazia: %+v", r.Grafo)

@@ -132,7 +132,7 @@ curl -X POST localhost:8080/api/lab/grafo -H 'Content-Type: application/json' -d
 - **Início:** "Vistos recentemente" (selo Cassandra), para quem está logado.
 - **Produto:** "Quem comprou também comprou" (selo Neo4j), com a força de cada sugestão.
 - **Laboratórios → cassandra → Consistência ajustável** (`/lab/consistencia`): escolha RF=1 ou RF=3 e veja cada nível escrever e ler.
-- **Laboratórios → neo4j → Grafo × SQL** (`/lab/grafo`): reconstruir o grafo, escolher a pergunta e o SKU, ver as duas consultas, os tempos e se as respostas batem. Na pergunta de 2 saltos, a tabela diz "Quem comprou *produto* também comprou…", com o nome de cada produto e a força em clientes.
+- **Laboratórios → neo4j → Grafo × SQL** (`/lab/grafo`): reconstruir o grafo, escolher a pergunta e o SKU, ver as duas consultas, os tempos e se as respostas batem. Na pergunta de 2 saltos, a resposta é "Quem comprou *produto* também comprou…" com uma barra por produto (a força, em clientes), e a tabela abaixo mostra a mesma lista nos dois bancos. No alcance (3 saltos), o total vem desmontado: um funil com os três saltos (compradores → outros produtos → clientes novos) e os 5 caminhos mais fortes, de uma consulta à parte no Neo4j (`CypherExplicarAlcance`), também fora do tempo medido.
 
 ## 6. Exercícios para você
 

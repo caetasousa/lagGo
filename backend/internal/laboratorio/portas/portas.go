@@ -130,6 +130,8 @@ type Consistencia interface {
 type GrafoLab interface {
 	TambemCompraram(ctx context.Context, sku string) (dominio.Medida, error)
 	Alcance(ctx context.Context, sku string) (dominio.Medida, error)
+	// ExplicarAlcance: os números de cada salto, para a tela (não é medido).
+	ExplicarAlcance(ctx context.Context, sku string) (dominio.ExplicacaoAlcance, error)
 }
 
 // NomesDoCatalogo: como cada SKU aparece para quem compra — o nome do

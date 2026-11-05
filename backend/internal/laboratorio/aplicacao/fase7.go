@@ -118,6 +118,16 @@ func (l *GrafoXSQL) Rodar(ctx context.Context, pergunta, sku string) (dominio.Re
 			ids = append(ids, linha.SkuID)
 		}
 	}
+	// A explicação do alcance também é só leitura para a tela: se falhar, o
+	// total medido continua valendo.
+	if pergunta == "alcance" {
+		if e, err := l.grafo.ExplicarAlcance(ctx, sku); err == nil {
+			r.Explicacao = &e
+			for _, c := range e.Caminhos {
+				ids = append(ids, c.SkuID)
+			}
+		}
+	}
 	r.Nomes = l.nomes(ctx, ids)
 	return r, nil
 }

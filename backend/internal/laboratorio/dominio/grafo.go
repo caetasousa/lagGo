@@ -40,6 +40,25 @@ type ResultadoGrafo struct {
 	// comprou Y" (Y5). Ficam fora das consultas medidas: um JOIN a mais no
 	// SQL (ou uma propriedade a mais no grafo) mudaria o que se compara.
 	Nomes map[string]string `json:"nomes"`
+	// Explicacao: só no alcance — como o total se forma, salto a salto.
+	Explicacao *ExplicacaoAlcance `json:"explicacao,omitempty"`
+}
+
+// ExplicacaoAlcance: o "alcance em 3 saltos" desmontado para a tela. Também
+// sai do grafo DEPOIS da medição, numa consulta à parte.
+type ExplicacaoAlcance struct {
+	Compradores    int64            `json:"compradores"`    // 1º salto: quem comprou o SKU
+	Intermediarios int64            `json:"intermediarios"` // 2º salto: os outros SKUs que eles compraram
+	Caminhos       []CaminhoAlcance `json:"caminhos"`       // os SKUs do meio mais fortes (mais compradores de X)
+}
+
+// CaminhoAlcance: X → (Forca compradores de X também compraram) SkuID →
+// (Novos clientes, que nunca compraram X, compraram SkuID). Um cliente novo
+// pode chegar por mais de um SKU: a soma dos Novos passa do total.
+type CaminhoAlcance struct {
+	SkuID string `json:"sku_id"`
+	Forca int64  `json:"forca"`
+	Novos int64  `json:"novos"`
 }
 
 // MesmaResposta: o top (sku e força, na ordem) e o total são iguais.

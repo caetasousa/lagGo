@@ -124,28 +124,8 @@ export function GrafoPage() {
             <Barras titulo="Tempo da consulta (ms)" unidade="ms"
                     dados={[{ nome: 'Neo4j', v: r.grafo.ms, cor: 'var(--serie-1)' }, { nome: 'PostgreSQL', v: r.sql.ms, cor: 'var(--serie-2)' }]} />
           </div>
-          {r.pergunta === 'tambem_comprou' && (
-            <>
-              <p className="small muted">
-                Os bancos comparam ids de SKU; o nome de cada produto e o vendedor vêm do catálogo, só para leitura. <UsoSelo id="mongo-catalogo" />
-              </p>
-              <table aria-label="Resposta dos dois bancos">
-                <thead>
-                  <tr><th colSpan={5}>Quem comprou <strong>{nomeDoSku(r.sku_id)}</strong> também comprou…</th></tr>
-                  <tr><th>#</th><th>Produto (Neo4j)</th><th>Clientes</th><th>Produto (PostgreSQL)</th><th>Clientes</th></tr>
-                </thead>
-                <tbody>
-                  {r.grafo.linhas.map((l, i) => (
-                    <tr key={i} className={r.sql.linhas[i]?.sku_id === l.sku_id ? undefined : 'ruim'}>
-                      <td>{i + 1}</td><td className="produto">{nomeDoSku(l.sku_id)}</td><td className="num">{l.forca}</td>
-                      <td className="produto">{r.sql.linhas[i] ? nomeDoSku(r.sql.linhas[i].sku_id) : '—'}</td><td className="num">{r.sql.linhas[i]?.forca ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <p className="small muted">"Clientes" é a <strong>força</strong>: quantos clientes distintos compraram os dois produtos.</p>
-            </>
-          )}
+          {r.pergunta === 'tambem_comprou' && <TambemComprou r={r} nome={nomeDoSku} />}
+          {r.pergunta === 'alcance' && r.explicacao && <ComoOAlcanceSeForma r={r} nome={nomeDoSku} />}
         </>
       )}
 
@@ -184,5 +164,105 @@ function ConclusaoGrafo({ r, nome }: { r: ResultadoGrafo; nome: (sku: string) =>
           : <>Ninguém que comprou <strong>{nome(r.sku_id)}</strong> comprou outro produto — as duas listas vêm vazias. </>}
       Neo4j: {ms(r.grafo.ms)} · PostgreSQL: {ms(r.sql.ms)}. Como o grafo é pequeno (cabe na memória dos dois), a diferença vem de <em>como</em> cada um anda: ponteiros entre vizinhos no Neo4j, JOINs com índices no PostgreSQL. Rode as duas perguntas e veja qual cresce mais com o salto extra.
     </Conclusao>
+  )
+}
+
+// O nome vem como "produto · vendedor": o produto em destaque, o vendedor
+// menor (ele só desempata dois SKUs do mesmo produto). O " · " continua no
+// texto (leitor de tela, testes), mas some da tela.
+function NomeDoSku({ nome }: { nome: string }) {
+  const i = nome.lastIndexOf(' · ')
+  if (i < 0) return <strong>{nome}</strong>
+  return <><strong>{nome.slice(0, i)}</strong><span className="vendedor"><span className="sep"> · </span>{nome.slice(i + 3)}</span></>
+}
+
+type Barra = { chave: string; nome: string; v: number; rotulo: string; frase: string }
+
+// Barras horizontais em HTML: uma série só (uma cor, sem legenda — o título
+// a nomeia), o número escrito na ponta, a frase inteira na dica (title).
+function ListaDeBarras({ rotulo, barras }: { rotulo: string; barras: Barra[] }) {
+  const max = Math.max(...barras.map((b) => b.v), 1)
+  return (
+    <ol className="barras-h" aria-label={rotulo}>
+      {barras.map((b) => (
+        <li key={b.chave} title={b.frase}>
+          <span className="barras-h-nome"><NomeDoSku nome={b.nome} /></span>
+          <span className="barras-h-trilho" aria-hidden="true"><span style={{ width: `${(b.v / max) * 100}%` }} /></span>
+          <span className="barras-h-valor">{b.rotulo}</span>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
+const clientes = (n: number, novos = false) => `${n.toLocaleString('pt-BR')} ${n === 1 ? (novos ? 'cliente novo' : 'cliente') : (novos ? 'clientes novos' : 'clientes')}`
+
+// 2 saltos: a recomendação como se lê numa loja, e a tabela que confere os dois bancos.
+function TambemComprou({ r, nome }: { r: ResultadoGrafo; nome: (sku: string) => string }) {
+  const partida = nome(r.sku_id)
+  return (
+    <>
+      <figure className="painel resposta-grafo" aria-label="Quem comprou também comprou">
+        <h3>Quem comprou <NomeDoSku nome={partida} /> também comprou…</h3>
+        {r.grafo.linhas.length === 0 ? <p className="muted">Ninguém que comprou este SKU comprou outro.</p> : (
+          <ListaDeBarras rotulo="Quem comprou também comprou" barras={r.grafo.linhas.map((l) => ({
+            chave: l.sku_id, nome: nome(l.sku_id), v: l.forca, rotulo: clientes(l.forca),
+            frase: `Quem comprou ${partida} também comprou ${nome(l.sku_id)} — ${l.forca} ${l.forca === 1 ? 'cliente levou' : 'clientes levaram'} os dois.`,
+          }))} />
+        )}
+        <figcaption className="small muted">
+          A barra é a <strong>força</strong>: quantos clientes compraram os dois (resposta do Neo4j). Os bancos só conhecem o id do SKU; nome e vendedor vêm do catálogo. <UsoSelo id="mongo-catalogo" />
+        </figcaption>
+      </figure>
+      <table aria-label="Resposta dos dois bancos" className="tabela-compacta">
+        <caption className="small muted">A mesma lista nos dois bancos (clientes que compraram os dois)</caption>
+        <thead><tr><th>#</th><th>Produto</th><th className="num">Neo4j</th><th className="num">PostgreSQL</th></tr></thead>
+        <tbody>
+          {r.grafo.linhas.map((l, i) => {
+            const q = r.sql.linhas[i]
+            const bate = q?.sku_id === l.sku_id && q?.forca === l.forca
+            return (
+              <tr key={i} className={bate ? undefined : 'ruim'}>
+                <td>{i + 1}</td><td className="produto">{nome(l.sku_id)}</td><td className="num">{l.forca}</td>
+                <td className="num">{!q ? '—' : q.sku_id === l.sku_id ? q.forca : `${q.forca} (${nome(q.sku_id)})`}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </>
+  )
+}
+
+// 3 saltos: o total sozinho não ensina; o funil mostra cada salto e por
+// quais produtos do meio se chega aos clientes novos.
+function ComoOAlcanceSeForma({ r, nome }: { r: ResultadoGrafo; nome: (sku: string) => string }) {
+  const e = r.explicacao!
+  const partida = nome(r.sku_id)
+  return (
+    <figure className="painel resposta-grafo" aria-label="Como o alcance se forma">
+      <h3>Quem comprou <NomeDoSku nome={partida} /> alcança, em 3 saltos, {clientes(r.grafo.total, true)}</h3>
+      <ol className="funil-grafo" aria-label="Os três saltos">
+        <li><span className="salto">1º salto</span><strong>{clientes(e.compradores)}</strong><span>compraram este produto</span></li>
+        <li><span className="salto">2º salto</span><strong>{e.intermediarios.toLocaleString('pt-BR')} {e.intermediarios === 1 ? 'outro produto' : 'outros produtos'}</strong><span>que esses clientes também compraram</span></li>
+        <li><span className="salto">3º salto</span><strong>{clientes(r.grafo.total, true)}</strong><span>compraram algum desses produtos sem nunca ter comprado este</span></li>
+      </ol>
+      {e.caminhos.length > 0 && <>
+        <h4>Por onde o alcance passa: os {e.caminhos.length} caminhos mais fortes</h4>
+        <table aria-label="Caminhos do alcance" className="tabela-compacta">
+          <thead><tr><th>Produto do meio (2º salto)</th><th className="num">Compradores deste que o levaram</th><th className="num">Clientes novos que ele alcança</th></tr></thead>
+          <tbody>
+            {e.caminhos.map((c) => (
+              <tr key={c.sku_id} title={`Quem comprou ${partida} também comprou ${nome(c.sku_id)} (${clientes(c.forca)}); e ${nome(c.sku_id)} foi comprado por ${clientes(c.novos)} que nunca compraram ${partida}.`}>
+                <td><NomeDoSku nome={nome(c.sku_id)} /></td><td className="num">{c.forca.toLocaleString('pt-BR')}</td><td className="num">{c.novos.toLocaleString('pt-BR')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>}
+      <figcaption className="small muted">
+        Leia cada linha como: quem comprou este também comprou o produto do meio; e o produto do meio foi comprado por clientes que nunca compraram este. Um cliente novo pode chegar por mais de um caminho: por isso a soma passa do total. Nomes do catálogo. <UsoSelo id="mongo-catalogo" />
+      </figcaption>
+    </figure>
   )
 }
